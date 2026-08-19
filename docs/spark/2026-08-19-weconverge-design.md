@@ -1,7 +1,7 @@
 # WEConverge — OMP AI-native 调度策略层设计
 
 - 日期：2026-08-19
-- 状态：已获用户批准，待书面复核
+- 状态：Owner-approved design baseline
 - 产品：WEConverge（WE 表示“我们”）
 - 形态：Oh My Pi 用户级 Extension
 - 权威源码目录：`J:\PigeonYang\tools\weconverge`
