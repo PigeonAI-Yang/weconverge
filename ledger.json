@@ -70,8 +70,8 @@
       "caps": ["CAP-001", "CAP-014"],
       "acs": ["AC-101", "AC-102", "AC-103", "AC-104", "AC-105", "AC-106", "AC-107", "AC-108", "AC-109", "AC-110", "AC-111", "AC-112", "AC-113", "AC-114", "AC-115"],
       "deps": ["T06"],
-      "status": "pending",
-      "verifiedBy": "junction 目标=仓库; ACCEPTANCE.md 逐项证据 (BLOCKED 不伪造)",
+      "status": "done",
+      "verifiedBy": "junction extensions/weconverge -> 仓库(已验证可解析); ACCEPTANCE.md 逐项证据 (AC-101..115 诚实 BLOCKED, 不伪造 PASS)",
       "artifacts": ["extensions/weconverge(junction)", "ACCEPTANCE.md"]
     },
     {
@@ -90,8 +90,8 @@
       "caps": ["CAP-001"],
       "acs": ["AC-113"],
       "deps": ["T07", "T08"],
-      "status": "pending",
-      "verifiedBy": "git 工作树干净(仅本项目); 已 commit; 无 push/publish",
+      "status": "done",
+      "verifiedBy": "git commit 0947f41; 工作树干净; 无 remote/push/publish",
       "artifacts": []
     }
   ]
