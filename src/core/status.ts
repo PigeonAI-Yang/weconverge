@@ -1,5 +1,5 @@
 // Status rendering. Unknown values must show "unknown"/"SOURCE GAP", never a false "confirmed". (CAP-010/AC-028)
-import type { ConfigV1, SessionStateV1 } from "./types";
+import type { ConfigV1, Effort, SessionStateV1 } from "./types";
 
 export interface StatusView {
   enabled: boolean;
@@ -7,8 +7,9 @@ export interface StatusView {
   generation: number;
   baselineModel: string;
   baselineEffort: string;
-  currentModel: string;
-  currentEffort: string;
+  /** LIVE readback at status time — never a stale cached value (2026-08-20 contract). */
+  actualModel: string;
+  actualEffort: string;
   effortOwner: string;
   selectedDirection: string | null;
   wave: number;
@@ -23,15 +24,34 @@ export interface StatusView {
 
 const UNKNOWN = "unknown";
 
-export function renderStatus(state: SessionStateV1, _config: ConfigV1): StatusView {
+function fmtModel(m: string | null): string {
+  return m ?? UNKNOWN;
+}
+function fmtEffort(e: Effort): string {
+  return e === "unknown" ? UNKNOWN : e;
+}
+
+/**
+ * Render status. `actual` is the live OMP readback taken at status time:
+ *  - object: show its values;
+ *  - null: readback failed -> show "unknown";
+ *  - undefined (tests/pure contexts): fall back to state values.
+ */
+export function renderStatus(
+  state: SessionStateV1,
+  _config: ConfigV1,
+  actual?: { model: string | null; effort: Effort } | null,
+): StatusView {
+  const actualModel = actual === undefined ? fmtModel(state.currentModel) : actual === null ? UNKNOWN : fmtModel(actual.model);
+  const actualEffort = actual === undefined ? fmtEffort(state.currentEffort) : actual === null ? UNKNOWN : fmtEffort(actual.effort);
   return {
     enabled: state.enabledAtStart,
     phase: state.phase,
     generation: state.generation,
-    baselineModel: state.baselineModel ?? UNKNOWN,
-    baselineEffort: state.baselineEffort === "unknown" ? "unknown" : state.baselineEffort,
-    currentModel: state.currentModel ?? UNKNOWN,
-    currentEffort: state.currentEffort === "unknown" ? "unknown" : state.currentEffort,
+    baselineModel: fmtModel(state.baselineModel),
+    baselineEffort: fmtEffort(state.baselineEffort),
+    actualModel,
+    actualEffort,
     effortOwner: state.effortOwnedByExtension ? "weconverge" : "external/none",
     selectedDirection: state.selectedDirection,
     wave: state.explorationWave,

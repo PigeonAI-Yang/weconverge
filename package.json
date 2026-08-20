@@ -5,13 +5,13 @@
   "type": "module",
   "description": "WEConverge — OMP AI-native scheduling policy layer (user-level Extension)",
   "scripts": {
-    "test": "tsx test/mechanical.test.ts",
+    "test": "node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/mechanical.test.ts",
     "test:native": "node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/mechanical.test.ts",
     "check:ledger": "node scripts/check-ledger.mjs",
-    "typecheck:core": "tsc --noEmit -p tsconfig.core.json"
+    "check:types": "node scripts/sync-omp-types.mjs",
+    "typecheck:core": "npx tsc --noEmit -p tsconfig.core.json && npx tsc --noEmit -p tsconfig.extension.json"
   },
   "devDependencies": {
-    "tsx": "^4.19.2",
     "typescript": "^5.6.0"
   }
 }

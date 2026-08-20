@@ -1,5 +1,5 @@
 // Role resolution + preflight + resolved-route construction. (CAP-007)
-import type { ConfigV1, DifficultyType, OmpAdapters, ResolvedRouteV1, SemanticAction } from "./types";
+import type { ConfigV1, DifficultyType, Effort, OmpAdapters, ResolvedRouteV1, SemanticAction } from "./types";
 
 /** CAP-007.3: capability -> OMP role. Missing role => null (SOURCE GAP, never silent fallback). */
 export function resolveCapability(cfg: ConfigV1, capability: string): string | null {
@@ -32,11 +32,31 @@ export function preferredActionFor(difficulty: DifficultyType): SemanticAction {
  * Preflight the target role's effort BEFORE any provider call (REQ-042/AC-019/CP-003).
  * Returns "unavailable" when the public API cannot resolve effort pre-call => BLOCKED (no call made).
  */
-export function preflightEffort(role: string, adapters: OmpAdapters): "medium" | "high" | "xhigh" | "max" | "blocked" | "unavailable" {
+export function preflightEffort(role: string, adapters: OmpAdapters): Effort | "blocked" | "unavailable" {
   return adapters.preflightEffort(role);
 }
 
-/** Build a ResolvedRouteV1 keeping requested vs resolved strictly separate (REQ-064/AC-022). */
+function gapRoute(requestedRole: string | null, parentAgentId: string | null, childAgentId: string | null): ResolvedRouteV1 {
+  return {
+    requestedRole,
+    resolvedAgent: null,
+    resolvedModel: null,
+    resolvedEffort: "unknown",
+    parentAgentId,
+    childAgentId,
+    source: "unavailable",
+    integrity: "source_gap",
+  };
+}
+
+/**
+ * Build a ResolvedRouteV1 keeping requested vs resolved strictly separated (REQ-064/AC-022).
+ * Hard rules (2026-08-20 contract):
+ *  - the requested role is NEVER copied into resolvedAgent;
+ *  - the parent session's model/effort is NEVER reported as a child's actual route;
+ *  - integrity is `confirmed` only when agent AND model AND effort are all known;
+ *  - effort "unknown" can never be reported as confirmed.
+ */
 export function buildResolvedRoute(args: {
   requestedRole: string | null;
   parentAgentId: string | null;
@@ -45,39 +65,41 @@ export function buildResolvedRoute(args: {
 }): ResolvedRouteV1 {
   const { requestedRole, parentAgentId, childAgentId, adapters } = args;
   if (!requestedRole) {
-    return {
-      requestedRole: null,
-      resolvedAgent: null,
-      resolvedModel: null,
-      resolvedEffort: "unknown",
-      parentAgentId,
-      childAgentId,
-      source: "unavailable",
-      integrity: "source_gap",
-    };
+    return gapRoute(null, parentAgentId, childAgentId);
   }
-  const actual = adapters.readbackActual();
-  if (!actual) {
+  if (childAgentId !== null) {
+    // Child route: must come from a per-child readback. No readback => SOURCE GAP.
+    const child = adapters.readbackChildRoute?.(childAgentId) ?? null;
+    if (!child) {
+      return { ...gapRoute(requestedRole, parentAgentId, childAgentId) };
+    }
+    const known = child.agent !== null && child.model !== null && child.effort !== "unknown" && child.effort !== "max";
     return {
       requestedRole,
-      resolvedAgent: null,
-      resolvedModel: null,
-      resolvedEffort: "unknown",
+      resolvedAgent: child.agent,
+      resolvedModel: child.model,
+      resolvedEffort: child.effort,
       parentAgentId,
       childAgentId,
-      source: "unavailable",
-      integrity: "source_gap",
+      source: "omp",
+      integrity: known ? "confirmed" : "source_gap",
     };
   }
+  // Main-session route (e.g. raise_effort on the current session).
+  const actual = adapters.readbackActual();
+  if (!actual) {
+    return gapRoute(requestedRole, parentAgentId, null);
+  }
+  const known = actual.model !== null && actual.effort !== "unknown" && actual.effort !== "max";
   return {
     requestedRole,
-    resolvedAgent: requestedRole,
+    resolvedAgent: null, // main session is not an agent child; no fabricated agent name
     resolvedModel: actual.model,
     resolvedEffort: actual.effort,
     parentAgentId,
-    childAgentId,
+    childAgentId: null,
     source: "omp",
-    integrity: actual.model || actual.effort !== "unknown" ? "confirmed" : "source_gap",
+    integrity: known ? "confirmed" : "source_gap",
   };
 }
 

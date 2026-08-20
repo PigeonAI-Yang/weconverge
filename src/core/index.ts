@@ -1,5 +1,6 @@
 // Public core surface (no runtime OMP dependency).
 export * from "./types";
+export * from "./ids";
 export * from "./config";
 export * from "./state";
 export * from "./evidence";

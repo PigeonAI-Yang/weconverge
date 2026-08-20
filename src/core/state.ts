@@ -1,4 +1,10 @@
 // Session-local state machine. Pure, immutable helpers. (CAP-002/006/012)
+//
+// Restore is two-phase so the wiring layer performs the REAL side effect:
+//   planRestore()    — pure: does the extension own effort, and what is the target?
+//   confirmRestore() — pure: fold the actual post-restore readback into state.
+// The wiring must call setSessionEffort + readbackActual between the two; mutating
+// only in-memory state without the real restore is a contract violation (REQ-012).
 import type { Effort, SessionStateV1 } from "./types";
 
 export interface Baseline {
@@ -21,6 +27,7 @@ export function createInitialState(opts: {
     currentModel: opts.baseline.model,
     currentEffort: opts.baseline.effort,
     effortOwnedByExtension: false,
+    lastEffortRaiseAt: null,
     selectedDirection: null,
     alternativeDirectionIds: [],
     evidence: [],
@@ -29,7 +36,7 @@ export function createInitialState(opts: {
     ownedChildRuns: [],
     manualExplorationGrant: null,
     lastDecision: null,
-    routingIntegrity: opts.baseline.model || opts.baseline.effort !== "unknown" ? "unverified" : "source_gap",
+    routingIntegrity: opts.baseline.model !== null && opts.baseline.effort !== "unknown" ? "unverified" : "source_gap",
     taskOutcome: "not_started",
     sourceGaps: [],
     blockedReason: null,
@@ -49,6 +56,7 @@ export function newGeneration(prev: SessionStateV1, baseline: Baseline): Session
 /** `reset` command: same generation, restore owned effort, rebuild clean baseline, keep audit (REQ-012/§15.1). */
 export function resetGeneration(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
   const restored = restoreOwnedEffort(state, baseline);
+  if (restored.restoreState === "failed") return restored;
   return {
     ...restored,
     phase: "baseline",
@@ -59,8 +67,9 @@ export function resetGeneration(state: SessionStateV1, baseline: Baseline): Sess
     explorationWave: 0,
     ownedChildRuns: [],
     manualExplorationGrant: null,
+    lastEffortRaiseAt: null,
     lastDecision: null,
-    routingIntegrity: baseline.model || baseline.effort !== "unknown" ? "unverified" : "source_gap",
+    routingIntegrity: baseline.model !== null && baseline.effort !== "unknown" ? "unverified" : "source_gap",
     taskOutcome: "not_started",
     sourceGaps: [],
     blockedReason: null,
@@ -70,6 +79,7 @@ export function resetGeneration(state: SessionStateV1, baseline: Baseline): Sess
 /** Model switch: restore old ownership, generation++, clear old model state, new baseline (REQ-012/AC-039). */
 export function modelSwitch(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
   const restored = restoreOwnedEffort(state, baseline);
+  if (restored.restoreState === "failed") return restored;
   const detachedChildren = restored.ownedChildRuns.map((c) => ({
     ...c,
     status: "detached" as const,
@@ -83,6 +93,7 @@ export function modelSwitch(state: SessionStateV1, baseline: Baseline): SessionS
     currentModel: baseline.model,
     currentEffort: baseline.effort,
     effortOwnedByExtension: false,
+    lastEffortRaiseAt: null,
     selectedDirection: null,
     alternativeDirectionIds: [],
     evidence: [],
@@ -91,26 +102,33 @@ export function modelSwitch(state: SessionStateV1, baseline: Baseline): SessionS
     ownedChildRuns: detachedChildren,
     manualExplorationGrant: null,
     lastDecision: null,
-    routingIntegrity: baseline.model || baseline.effort !== "unknown" ? "unverified" : "source_gap",
+    routingIntegrity: baseline.model !== null && baseline.effort !== "unknown" ? "unverified" : "source_gap",
     taskOutcome: "not_started",
     sourceGaps: [],
     blockedReason: null,
   };
 }
 
-/** `off`: restore owned effort, detach running WEConverge children, do not terminate user children (REQ-012/AC-038). */
+/** `off`: restore owned effort, detach running WEConverge children, clear grant; never terminate user children (REQ-012/AC-038/AC-040). */
 export function applyOff(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
   const restored = restoreOwnedEffort(state, baseline);
+  if (restored.restoreState === "failed") return restored;
   return {
     ...restored,
     enabledAtStart: false,
     phase: "disabled",
+    manualExplorationGrant: null,
     ownedChildRuns: restored.ownedChildRuns.map((c) => ({ ...c, status: "detached" as const })),
   };
 }
 
-/** Restore only Extension-owned session-local effort. Never touches persistent config (REQ-033). */
+/**
+ * Pure state fold for restore (test seam). The REAL restore must go through
+ * planRestore -> adapters.setSessionEffort -> adapters.readbackActual -> confirmRestore
+ * in the wiring layer; this helper alone is memory-only and exists for mechanical tests.
+ */
 export function restoreOwnedEffort(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
+  if (state.restoreState === "failed") return { ...state, health: "degraded" };
   if (!state.effortOwnedByExtension) {
     return { ...state, restoreState: "not_needed" };
   }
@@ -127,6 +145,46 @@ export function restoreOwnedEffort(state: SessionStateV1, baseline: Baseline): S
   };
 }
 
+/** Phase 1 of a real restore: what must the wiring set+readback? null => nothing owned. */
+export function planRestore(state: SessionStateV1): { needed: boolean; target: Baseline } {
+  if (!state.effortOwnedByExtension) return { needed: false, target: { model: state.baselineModel, effort: state.baselineEffort } };
+  return { needed: true, target: { model: state.baselineModel, effort: state.baselineEffort } };
+}
+
+/**
+ * Phase 2 of a real restore: fold the post-restore readback into state.
+ * Unknown/unreadable actual, or actual still different from the target, is failed+degraded —
+ * never reported as restored (REQ-012/AC-027).
+ */
+export function confirmRestore(
+  state: SessionStateV1,
+  target: Baseline,
+  actual: Baseline | null,
+): SessionStateV1 {
+  if (!state.effortOwnedByExtension) return { ...state, restoreState: "not_needed" };
+  const restored =
+    actual !== null &&
+    actual.effort !== "unknown" &&
+    actual.effort === target.effort &&
+    (target.model === null || actual.model === target.model);
+  if (!restored) {
+    return {
+      ...state,
+      currentEffort: actual?.effort ?? state.currentEffort,
+      currentModel: actual?.model ?? state.currentModel,
+      restoreState: "failed",
+      health: "degraded",
+    };
+  }
+  return {
+    ...state,
+    currentEffort: actual.effort,
+    currentModel: actual.model,
+    effortOwnedByExtension: false,
+    restoreState: "restored",
+  };
+}
+
 /** Detect external ownership change: actual differs from owned baseline while owned (REQ-013/AC-025). */
 export function detectExternalOwnershipChange(
   state: SessionStateV1,
@@ -135,6 +193,20 @@ export function detectExternalOwnershipChange(
   if (!state.effortOwnedByExtension) return false;
   if (state.currentEffort === "unknown" || actual.effort === "unknown") return false;
   return actual.effort !== state.currentEffort || actual.model !== state.currentModel;
+}
+
+/** Relinquish ownership after an external change: keep actual values, mark degraded, re-baseline (REQ-013). */
+export function relinquishOwnership(state: SessionStateV1, actual: Baseline): SessionStateV1 {
+  return {
+    ...state,
+    baselineModel: actual.model,
+    baselineEffort: actual.effort,
+    currentModel: actual.model,
+    currentEffort: actual.effort,
+    effortOwnedByExtension: false,
+    health: "degraded",
+    restoreState: "not_needed",
+  };
 }
 
 /** Mark a running WEConverge child as detached (off / late result) — visible, not in routing (REQ-053/AC-038). */

@@ -9,7 +9,10 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "lib": ["ES2020"],
-    "types": []
+    "types": [],
+    "paths": {
+      "@oh-my-pi/pi-coding-agent": ["./types/omp-extension-api.d.ts"]
+    }
   },
-  "include": ["src/core/**/*.ts", "test/**/*.ts", "types/**/*.d.ts"]
+  "include": ["src/**/*.ts", "index.ts", "test/**/*.ts", "types/**/*.d.ts"]
 }

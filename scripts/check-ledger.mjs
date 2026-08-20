@@ -1,21 +1,27 @@
 #!/usr/bin/env node
-// Machine-checkable ledger validator for WEConverge (v2, 2026-08-20).
+// Machine-checkable ledger validator for WEConverge (v3, 2026-08-20).
 // Enforces, in addition to dependency/status invariants:
 //   1. done tasks must reference artifacts/evidence that really exist on disk;
-//   2. T07 may not be `done` while any AC-101..115 row in ACCEPTANCE.md is BLOCKED;
+//   2. T07 may not be `done` while any AC-101..115 row in ACCEPTANCE.md is
+//      BLOCKED / unpassed (parsed per-AC from ACCEPTANCE.md);
 //   3. commit hashes cited in verifiedBy/artifacts must resolve in git; a verifiedBy
 //      claiming a clean worktree requires `git status --porcelain` to be empty; a
-//      top-level "head" field must equal `git rev-parse HEAD`;
+//      top-level "head" field must equal `git rev-parse HEAD`. If the target tree is
+//      not a git work tree (or git is unavailable), these checks degrade to a skip
+//      with a printed note instead of failing;
 //   4. PLAN.md dependency-block statuses must match ledger.json;
 //   5. when T04/T05/T06 are done, the typecheck/test gates must actually exit 0.
 // Usage: node scripts/check-ledger.mjs
-import { execFileSync, execSync } from "node:child_process";
+//        WECONVERGE_ROOT=<fixture-or-repo-root> node scripts/check-ledger.mjs
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, "..");
+const root = process.env.WECONVERGE_ROOT
+  ? resolve(process.env.WECONVERGE_ROOT)
+  : join(here, "..");
 const ledgerPath = join(root, "ledger.json");
 
 let ledger;
@@ -40,6 +46,21 @@ function git(args) {
   } catch {
     return null;
   }
+}
+
+const gitState = { checked: false, available: false, reason: "" };
+function gitAvailable() {
+  if (!gitState.checked) {
+    gitState.checked = true;
+    if (git(["rev-parse", "--is-inside-work-tree"]) === "true") {
+      gitState.available = true;
+    } else {
+      gitState.available = false;
+      gitState.reason =
+        "git is unavailable or WECONVERGE_ROOT is not inside a git work tree; commit/HEAD/worktree checks skipped";
+    }
+  }
+  return gitState.available;
 }
 
 function artifactExists(raw) {
@@ -71,7 +92,9 @@ const gateCache = new Map();
 function runGate(name, command, args) {
   if (!gateCache.has(name)) {
     try {
-      execFileSync(command, args, { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+      // Windows cannot execFile .cmd shims (npx) directly (EINVAL since the Node
+      // batch-file CVE fix); route through the shell there.
+      execFileSync(command, args, { cwd: root, stdio: ["ignore", "pipe", "pipe"], shell: process.platform === "win32" });
       gateCache.set(name, { ok: true });
     } catch (e) {
       gateCache.set(name, { ok: false, output: String(e.stdout ?? "") + String(e.stderr ?? "") });
@@ -99,6 +122,23 @@ function testGateOk() {
     "./scripts/node-ts-loader.mjs",
     "test/mechanical.test.ts",
   ]);
+}
+
+// ---------- ACCEPTANCE.md AC status parsing ----------
+// A line mentioning an AC counts as BLOCKED/unpassed when it carries an explicit
+// failure marker (English or Chinese) and is not explicitly negated ("not blocked").
+const AC_BLOCKED_RE =
+  /\bBLOCKED\b|SOURCE\s*GAP|FAIL(?:ED|URE)?|NOT\s*PASS(?:ED)?|NO\s*PASS|未通过|不通过|未合格|阻塞|受阻|未(?:能|有|获)[^。\n]{0,12}证据|无[^。\n]{0,12}证据|ENVIRONMENT-BLOCKED/i;
+const AC_NOT_BLOCKED_RE = /not\s+blocked|非\s*blocked|未阻塞|不阻塞|未受限/i;
+
+function acceptanceAcBlocked(acceptance, ac) {
+  const re = new RegExp(`\\b${ac}\\b`, "i");
+  for (const line of acceptance.split(/\r?\n/)) {
+    if (!re.test(line)) continue;
+    if (AC_NOT_BLOCKED_RE.test(line)) continue;
+    if (AC_BLOCKED_RE.test(line)) return true;
+  }
+  return false;
 }
 
 // ---------- 0. base invariants ----------
@@ -145,25 +185,29 @@ for (const t of ledger.tasks) {
   } catch {
     errors.push("ACCEPTANCE.md missing");
   }
-  const blockedAcs = acs.filter((ac) => {
-    const lines = acceptance.split(/\r?\n/).filter((l) => l.includes(ac));
-    return lines.some((l) => /blocked/i.test(l));
-  });
-  if (t07 && t07.status === "done" && blockedAcs.length > 0) {
-    errors.push(`T07: done but ${blockedAcs.join(",")} still BLOCKED in ACCEPTANCE.md`);
+  if (t07 && t07.status === "done" && acceptance) {
+    const blockedAcs = acs.filter((ac) => acceptanceAcBlocked(acceptance, ac));
+    if (blockedAcs.length > 0) {
+      errors.push(
+        `T07: done but ${blockedAcs.length} AC(s) still BLOCKED/unpassed in ACCEPTANCE.md: ${blockedAcs.join(",")}`,
+      );
+    }
   }
 }
 
 // ---------- 3. commit / HEAD / worktree consistency ----------
-{
+if (!gitAvailable()) {
+  console.log(`  skip: ${gitState.reason} (root=${root})`);
+} else {
   const cited = new Set();
   for (const t of ledger.tasks) {
     const text = [t.verifiedBy ?? "", ...(t.artifacts ?? [])].join(" ");
     for (const m of text.matchAll(/\b[0-9a-f]{7,40}\b/g)) cited.add(m[0]);
   }
   for (const h of cited) {
-    const ok = git(["cat-file", "-e", `${h}^{commit}`]);
-    if (ok === null) errors.push(`commit cited but not found in git history: ${h}`);
+    if (git(["cat-file", "-e", `${h}^{commit}`]) === null) {
+      errors.push(`commit cited but not found in git history: ${h}`);
+    }
   }
   if (typeof ledger.head === "string") {
     const head = git(["rev-parse", "HEAD"]);
@@ -194,7 +238,7 @@ for (const t of ledger.tasks) {
   }
   const planStatus = new Map();
   for (const line of plan.split(/\r?\n/)) {
-    const m = line.match(/^\s*(T\d{2})\b.*?→\s*(done|in_progress|pending|blocked)\b/);
+    const m = line.match(/^\s*(?:-\s*)?(T\d{2})\b.*?→\s*(done|in_progress|pending|blocked)\b/);
     if (m) planStatus.set(m[1], m[2]);
   }
   for (const [id, st] of planStatus) {
@@ -228,7 +272,8 @@ for (const t of ledger.tasks) {
 const counts = { pending: 0, in_progress: 0, done: 0, blocked: 0 };
 for (const t of ledger.tasks) counts[t.status]++;
 
-console.log("WEConverge ledger check (v2)");
+console.log("WEConverge ledger check (v3)");
+console.log(`  root: ${root}`);
 console.log(`  tasks: ${ledger.tasks.length}  done=${counts.done} in_progress=${counts.in_progress} pending=${counts.pending} blocked=${counts.blocked}`);
 if (errors.length) {
   console.error("FAILED:");

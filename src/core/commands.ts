@@ -15,8 +15,8 @@ export function parseCommand(raw: string): ParsedCommand {
   if (parts.length === 0) return { cmd: "usage", usage: true };
   const cmd = parts[0] as WeconvergeCommand;
   if (!VALID.includes(cmd)) return { cmd: "usage", usage: true };
-  // status/usage take no extra args; on/off/reset ignore extras but remain valid
-  if (cmd === "status" && parts.length > 1) return { cmd: "usage", usage: true };
+  // Every supported command is exact-arity; illegal parameters are usage-only.
+  if (parts.length > 1) return { cmd: "usage", usage: true };
   return { cmd, usage: false };
 }
 
