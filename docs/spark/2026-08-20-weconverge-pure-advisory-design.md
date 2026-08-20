@@ -399,7 +399,7 @@ The parent model's input + output + reasoning tokens are the primary cost. Child
 
 | Cost source | Billed to | Why advisory still respects it |
 |---|---|---|
-| Policy tokens (bounded, generation-scoped) | Parent input each turn within the injection generation only | Disclosed but amortized. |
+| Policy tokens (bounded, generation-scoped ≤60 tokens, injected once per generation per Section 4.1) | Parent input includes the injected policy each subsequent turn of that generation (amortized; not re-injected per turn) | Disclosed, consistent with Section 11.4 (60 total, not 25×60). |
 | Probe synthesis (parent reasoning + task JSON) | Parent reasoning + output | Necessary parent cost; bounded by 2 probes per batch. |
 | Child execution and output | Provider-executed children; child output tokens returned as parent input on synthesis | Bounded only by the model's own batch size; advisory cannot guarantee child output length. |
 | Blocked or failed formal `weconverge_decide` | One parent tool call when the narrow path is used | Rare; not on normal exploration. |
