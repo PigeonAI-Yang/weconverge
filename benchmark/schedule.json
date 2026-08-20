@@ -1,0 +1,294 @@
+{
+  "meta": {
+    "seed": 20260820,
+    "algorithm": "mulberry32 Fisher-Yates with trial offset seed+attempt*1009 until no adjacent instance_id (first valid attempt=55); opaque IDs via mulberry32(20260821) 8-hex",
+    "total_runs": 40,
+    "attempt": 55,
+    "opaque_seed": 20260821,
+    "created_at": "2026-08-20T12:00:00Z",
+    "balance": "10 tasks x ON*2 + OFF*2 = 40",
+    "no_adjacent_duplicate": "instance_id and instance/arm/repeat tuple"
+  },
+  "runs": [
+    {
+      "instance_id": "pytest-dev__pytest-10051",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-641b399e",
+      "index": 0
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-14623",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-df2bcff0",
+      "index": 1
+    },
+    {
+      "instance_id": "django__django-10554",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-feb95f40",
+      "index": 2
+    },
+    {
+      "instance_id": "mwaskom__seaborn-3069",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-49ae8d41",
+      "index": 3
+    },
+    {
+      "instance_id": "astropy__astropy-12907",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-f4161fae",
+      "index": 4
+    },
+    {
+      "instance_id": "pydata__xarray-2905",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-3c436fba",
+      "index": 5
+    },
+    {
+      "instance_id": "pylint-dev__pylint-4551",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-3bf5662d",
+      "index": 6
+    },
+    {
+      "instance_id": "mwaskom__seaborn-3069",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-cfae92b6",
+      "index": 7
+    },
+    {
+      "instance_id": "pylint-dev__pylint-4551",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-d6d8563b",
+      "index": 8
+    },
+    {
+      "instance_id": "sympy__sympy-12419",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-67d3b4ae",
+      "index": 9
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-14623",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-b4d6ba0e",
+      "index": 10
+    },
+    {
+      "instance_id": "astropy__astropy-12907",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-778ac8ac",
+      "index": 11
+    },
+    {
+      "instance_id": "sympy__sympy-12419",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-ce9c349d",
+      "index": 12
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-10466",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-b6899815",
+      "index": 13
+    },
+    {
+      "instance_id": "mwaskom__seaborn-3069",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-8af48381",
+      "index": 14
+    },
+    {
+      "instance_id": "django__django-10554",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-6ec2e634",
+      "index": 15
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-10297",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-6259253b",
+      "index": 16
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-14623",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-e8628df8",
+      "index": 17
+    },
+    {
+      "instance_id": "pydata__xarray-2905",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-67afdca2",
+      "index": 18
+    },
+    {
+      "instance_id": "sympy__sympy-12419",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-04cfd074",
+      "index": 19
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-10466",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-87cc2d57",
+      "index": 20
+    },
+    {
+      "instance_id": "sympy__sympy-12419",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-f4db7bdf",
+      "index": 21
+    },
+    {
+      "instance_id": "pytest-dev__pytest-10051",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-efe28398",
+      "index": 22
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-10466",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-78b46cd0",
+      "index": 23
+    },
+    {
+      "instance_id": "django__django-10554",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-c0ce442f",
+      "index": 24
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-14623",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-5c7eca05",
+      "index": 25
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-10297",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-6f2679ae",
+      "index": 26
+    },
+    {
+      "instance_id": "pylint-dev__pylint-4551",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-818bcdba",
+      "index": 27
+    },
+    {
+      "instance_id": "pytest-dev__pytest-10051",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-e5b9d7ed",
+      "index": 28
+    },
+    {
+      "instance_id": "mwaskom__seaborn-3069",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-bdcd012c",
+      "index": 29
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-10297",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-34012601",
+      "index": 30
+    },
+    {
+      "instance_id": "pytest-dev__pytest-10051",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-67d5a3f0",
+      "index": 31
+    },
+    {
+      "instance_id": "django__django-10554",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-2839268f",
+      "index": 32
+    },
+    {
+      "instance_id": "pydata__xarray-2905",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-f57860a4",
+      "index": 33
+    },
+    {
+      "instance_id": "scikit-learn__scikit-learn-10297",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-d769f093",
+      "index": 34
+    },
+    {
+      "instance_id": "pylint-dev__pylint-4551",
+      "arm": "ON",
+      "repeat": 2,
+      "run_id": "run-183fe8dc",
+      "index": 35
+    },
+    {
+      "instance_id": "pydata__xarray-2905",
+      "arm": "OFF",
+      "repeat": 2,
+      "run_id": "run-cfd64b54",
+      "index": 36
+    },
+    {
+      "instance_id": "astropy__astropy-12907",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-65c34c1a",
+      "index": 37
+    },
+    {
+      "instance_id": "sphinx-doc__sphinx-10466",
+      "arm": "OFF",
+      "repeat": 1,
+      "run_id": "run-5efe5526",
+      "index": 38
+    },
+    {
+      "instance_id": "astropy__astropy-12907",
+      "arm": "ON",
+      "repeat": 1,
+      "run_id": "run-f015b03c",
+      "index": 39
+    }
+  ]
+}

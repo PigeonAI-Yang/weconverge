@@ -2,3 +2,5 @@
 .workbuddy/
 node_modules/
 types/omp-generated/
+benchmark/runs/
+benchmark/preflight.json

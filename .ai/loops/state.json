@@ -1,0 +1,54 @@
+{
+  "loop": "weconverge-benchmark-bootstrap",
+  "date": "2026-08-20",
+  "purpose": "determine whether WEConverge materially improves final code-repair quality",
+  "status": "bootstrapped",
+  "provenance": {
+    "source": "princeton-nlp/SWE-bench_Verified",
+    "revision": "c104f840cc67f8b6eec6f759ebc8b2693d585d4a",
+    "parquet_path": "data/test-00000-of-00001.parquet",
+    "parquet_sha256": "a45b1fe4e2f0c8390b2b2938ac83e92ed5979000856808f3679c07812e9e6dcd"
+  },
+  "corpus": {
+    "selected_count": 10,
+    "filtered_instances": 261,
+    "selection_seed": "weconverge-2026-08-20",
+    "instance_ids": [
+      "django__django-10554",
+      "sympy__sympy-12419",
+      "sphinx-doc__sphinx-10466",
+      "matplotlib__matplotlib-14623",
+      "scikit-learn__scikit-learn-10297",
+      "astropy__astropy-12907",
+      "pydata__xarray-2905",
+      "pytest-dev__pytest-10051",
+      "pylint-dev__pylint-4551",
+      "mwaskom__seaborn-3069"
+    ]
+  },
+  "schedule": {
+    "seed": 20260820,
+    "algorithm": "mulberry32 Fisher-Yates with trial offset seed+attempt*1009 until no adjacent instance_id (attempt 55); opaque via mulberry32(20260821)",
+    "total_runs": 40,
+    "balance": "10x ON*2 OFF*2",
+    "opaque_format": "run-<8hex>"
+  },
+  "gates": {
+    "corpus": "pass",
+    "schedule": "pass",
+    "controller": "pass",
+    "verifier": "pass",
+    "stage_smoke": "pass"
+  },
+  "permissions": {
+    "no_new_dependencies": true,
+    "no_docker_install": true,
+    "no_provider_calls": true,
+    "no_source_changes": true
+  },
+  "budget": {
+    "wall_minutes": 15,
+    "max_tracked_files": 8,
+    "attempts": "one implementation + one gate repair"
+  }
+}
