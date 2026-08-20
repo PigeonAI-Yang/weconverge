@@ -421,6 +421,44 @@ function runControlVerb(verb, cfg, dryRun){
 }
 
 function cmdExecute(runId, dryRun){
+  if(dryRun){
+    const beforeRuns = fs.existsSync(RUNS_ROOT) ? fs.readdirSync(RUNS_ROOT).sort() : [];
+    const { cfg, sched } = verifyScheduleConfigOrThrow();
+    const run = sched.runs.find(r=>r.run_id===runId);
+    if(!run){ console.error(`run_id not found: ${runId}`); process.exit(2); }
+    const runDir = path.join(RUNS_ROOT, runId);
+    const gradingPath = path.join(runDir,'grading.json');
+    const anonPath = path.join(runDir,'result-anon.json');
+    const finalized = fs.existsSync(gradingPath) && fs.existsSync(anonPath);
+    const wouldStage = !fs.existsSync(runDir) || (fs.existsSync(runDir) && fs.readdirSync(runDir).length===0);
+    const armVerb = run.arm === 'ON' ? 'on' : 'off';
+    const controlOnOff = `omp -p --no-session --model ${cfg.model} --thinking ${cfg.thinking||cfg.effort} --max-time ${cfg.control_max_time} --no-skills --no-rules --no-extensions --extension ${cfg.extension} \"/weconverge ${armVerb}\"`;
+    const controlReset = `omp -p --no-session --model ${cfg.model} --thinking ${cfg.thinking||cfg.effort} --max-time ${cfg.control_max_time} --no-skills --no-rules --no-extensions --extension ${cfg.extension} \"/weconverge reset\"`;
+    const promptPath = path.join(runDir,'PROMPT.md');
+    const trialCmd = `omp -p --no-session --model ${cfg.model} --thinking ${cfg.thinking||cfg.effort} --max-time ${cfg.max_time} --auto-approve --approval-mode ${cfg.approval_mode} --no-extensions --extension ${cfg.extension} @${promptPath}`;
+    const plan = {
+      run_id: run.run_id,
+      instance_id: run.instance_id,
+      arm: run.arm,
+      index: run.index,
+      dry_run: true,
+      read_only: true,
+      would_stage: wouldStage,
+      would_skip_finalized: finalized,
+      control_on_off: finalized ? null : controlOnOff,
+      trial_command: finalized ? null : trialCmd,
+      control_reset: finalized ? null : controlReset,
+      note: finalized ? 'would skip (already finalized, never retry)' : 'would stage if needed, apply arm via control, run trial, capture patch/final-answer, finalize anonymously'
+    };
+    console.log(JSON.stringify({ dry_run_plan: plan },null,2));
+    const afterRuns = fs.existsSync(RUNS_ROOT) ? fs.readdirSync(RUNS_ROOT).sort() : [];
+    if(JSON.stringify(beforeRuns)!==JSON.stringify(afterRuns)){
+      console.error(`dry-run invariant violation: run directories changed before ${JSON.stringify(beforeRuns)} after ${JSON.stringify(afterRuns)}`);
+      process.exit(2);
+    }
+    console.log(JSON.stringify({ dry_run_invariant: 'pass', before: beforeRuns, after: afterRuns, no_mutation: true },null,2));
+    return;
+  }
   if(!runId) usage();
   const { cfg, sched } = verifyScheduleConfigOrThrow();
   const run = sched.runs.find(r=>r.run_id===runId);
@@ -458,60 +496,71 @@ function cmdExecute(runId, dryRun){
   // apply arm via control
   const armVerb = run.arm === 'ON' ? 'on' : 'off';
   console.log(`applying arm ${run.arm} via control ${armVerb}...`);
-  runControlVerb(armVerb, cfg, dryRun);
+  runControlVerb(armVerb, cfg, false);
   // trial invocation
   const promptPath = path.join(runDir,'PROMPT.md');
   const repoDir = path.join(runDir,'repo');
   const cwd = fs.existsSync(repoDir) ? repoDir : runDir;
   let exitCode = 0;
   let durationMs = 0;
-  if(dryRun){
-    console.log(`[dry-run] trial for ${runId} skipped, simulating exit 0`);
-    // simulate a patch by ensuring repo diff exists if repo present
-    // create dummy final-answer if not exists
-    const destFinal = path.join(runDir,'final-answer.txt');
-    if(!fs.existsSync(destFinal)){
-      fs.writeFileSync(destFinal, `dry-run final answer for ${runId}`, 'utf-8');
-    }
-    // ensure patch.diff exists via git artifacts (may be empty)
-    // touch a change to produce status if needed? keep existing
-    exitCode = 0;
-    durationMs = 1000;
-  } else {
+  {
     const trialArgs = ['-p','--no-session','--model', cfg.model,'--thinking', cfg.thinking||cfg.effort,'--max-time', cfg.max_time,'--auto-approve','--approval-mode', cfg.approval_mode,'--no-extensions','--extension', cfg.extension, `@${promptPath}`];
     console.log(`running trial ${runId} with omp...`);
     const start = Date.now();
     const trialRes = spawnSync('omp', trialArgs, { encoding:'utf-8', timeout: 35*60*1000, cwd, windowsHide: true, maxBuffer: 20*1024*1024 });
     durationMs = Date.now() - start;
     exitCode = trialRes.status === null ? 2 : trialRes.status;
-    // stream logs already captured in trialRes stdout/stderr; print to supervisor
     if(trialRes.stdout) process.stdout.write(trialRes.stdout);
     if(trialRes.stderr) process.stderr.write(trialRes.stderr);
     console.log(`trial exit ${exitCode} duration ${durationMs}ms`);
-    // invariant: never retry model run even if failure — record it
   }
   // capture final answer path (runDir/final-answer.txt or PROMPT fallback)
   let finalAnswerPath = path.join(runDir,'final-answer.txt');
   if(!fs.existsSync(finalAnswerPath)){
-    // try to produce from trial output? In real run agent should have produced file; in dry-run we created.
-    // if still missing, create empty placeholder to allow capture to proceed and record failure
     fs.writeFileSync(finalAnswerPath, `missing final answer for ${runId} exit ${exitCode}`, 'utf-8');
   }
   // apply reset control
   console.log(`resetting via control reset...`);
-  runControlVerb('reset', cfg, dryRun);
+  runControlVerb('reset', cfg, false);
   // capture (includes patch hash/status and anonymization)
   cmdCapture(runId, exitCode, durationMs, finalAnswerPath);
-  // exit semantics: individual task failure is recorded and execute-all continues; controller failure exits nonzero
-  // For single execute, we still exit 0 even if trial failed, but log it. The capture records exit_code.
   if(exitCode!==0){
     console.log(`trial ${runId} recorded failure exit ${exitCode} — not retrying`);
   }
 }
-
 function cmdExecuteAll(dryRun){
+  if(dryRun){
+    const beforeRuns = fs.existsSync(RUNS_ROOT) ? fs.readdirSync(RUNS_ROOT).sort() : [];
+    const { cfg, sched } = verifyScheduleConfigOrThrow();
+    const sorted = [...sched.runs].sort((a,b)=>a.index-b.index);
+    const plan = [];
+    for(const run of sorted){
+      const runDir = path.join(RUNS_ROOT, run.run_id);
+      const finalized = fs.existsSync(path.join(runDir,'grading.json')) && fs.existsSync(path.join(runDir,'result-anon.json'));
+      if(finalized){
+        plan.push({ run_id: run.run_id, index: run.index, instance_id: run.instance_id, arm: run.arm, action: 'skip (already finalized)' });
+        continue;
+      }
+      const wouldStage = !fs.existsSync(runDir) || fs.readdirSync(runDir).length===0;
+      const armVerb = run.arm === 'ON' ? 'on' : 'off';
+      plan.push({ run_id: run.run_id, index: run.index, instance_id: run.instance_id, arm: run.arm, action: wouldStage ? 'would stage, control '+armVerb+', trial, capture' : 'would control '+armVerb+', trial, capture' });
+    }
+    console.log(JSON.stringify({ dry_run_plan_all: plan, total: sorted.length, read_only: true },null,2));
+    const afterRuns = fs.existsSync(RUNS_ROOT) ? fs.readdirSync(RUNS_ROOT).sort() : [];
+    if(JSON.stringify(beforeRuns)!==JSON.stringify(afterRuns)){
+      console.error(`dry-run invariant violation execute-all: before ${JSON.stringify(beforeRuns)} after ${JSON.stringify(afterRuns)}`);
+      process.exit(2);
+    }
+    console.log(JSON.stringify({ dry_run_invariant: 'pass', before: beforeRuns, after: afterRuns, no_mutation: true },null,2));
+    // additionally verify controller can report next run
+    const next = sorted.find(r=> {
+      const d=path.join(RUNS_ROOT,r.run_id);
+      return !(fs.existsSync(path.join(d,'grading.json')) && fs.existsSync(path.join(d,'result-anon.json')));
+    });
+    if(next) console.log(JSON.stringify({ resume_next: { run_id: next.run_id, index: next.index } },null,2));
+    return;
+  }
   const { cfg, sched } = verifyScheduleConfigOrThrow();
-  // walk frozen schedule sequentially in index order
   const sorted = [...sched.runs].sort((a,b)=>a.index-b.index);
   let overallControllerFailure = false;
   for(const run of sorted){
@@ -524,15 +573,12 @@ function cmdExecuteAll(dryRun){
     }
     try{
       console.log(`=== execute ${run.run_id} index ${run.index} ${run.instance_id} ===`);
-      cmdExecute(run.run_id, dryRun);
+      cmdExecute(run.run_id, false);
     }catch(e){
-      // cmdExecute already exits 2 on controller failure; but if it throws, treat as controller failure
       console.error(`controller/invariant failure for ${run.run_id}: ${String(e.message||e).slice(0,500)}`);
       overallControllerFailure = true;
       break;
     }
-    // after cmdExecute, check if it exited via process.exit on controller failure — we would have terminated.
-    // If trial failure, continue.
   }
   if(overallControllerFailure){
     console.error('execute-all stopped on controller/invariant failure');
@@ -541,7 +587,6 @@ function cmdExecuteAll(dryRun){
     console.log(JSON.stringify({ execute_all:true, completed:true, dry_run: !!dryRun },null,2));
   }
 }
-
 const args = process.argv.slice(2);
 const cmd = args[0];
 if(cmd==='preflight'){

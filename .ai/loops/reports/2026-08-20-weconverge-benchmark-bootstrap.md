@@ -146,24 +146,26 @@ PASS: resume selects index 1 correct: run-df2bcff0 (matplotlib OFF2)
 VERIFIER PASS
 ```
 
-## Execution evidence (capture + dry-run, no provider)
+## Execution evidence (capture + dry-run read-only, no provider)
 
 - Capture: `node scripts/benchmark-weconverge.mjs capture --run run-641b399e --exit-code 0 --duration-ms 265000 --final-answer benchmark/runs/run-641b399e/final-answer.txt` → captured patch_sha256 `4dfdf3f827197cb7e967181fe19236fc23f058b17e3fb89ac6ab848dcba724d5`, final_answer_sha256 `1fb221c46caab815935add1022e85716e98d18658dc7074fd9b9fca23329df47`, git_head `aa55975c7d3f6c9f6d7f68accc41bb7cadf0eb9a`, git_status `M src/_pytest/logging.py | M testing/logging/test_fixture.py`, created `result-anon.json`/`grading.json` without arm, `controller.json` retains arm ON, `patch.json` records hash/status.
 
-- Dry-run executor: `node scripts/benchmark-weconverge.mjs execute --run run-df2bcff0 --dry-run` → stages matplotlib OFF2 if needed, applies control `off` (dry), simulates trial exit 0 duration 1000, captures placeholder, verifies no arm leak, shows execute transitions without provider calls. `execute-all --dry-run` walks schedule sequentially, skips finalized `run-641b399e`, selects `run-df2bcff0` next, continues after simulated failures.
+- Dry-run fix (2026-08-20 microfix): previous `execute --dry-run`/`execute-all --dry-run` staged/cloned/finalized fake runs and timed out at index 11 (created 11 dirs: run-3bf5662d, run-3c436fba, run-49ae8d41, run-67d3b4ae, run-778ac8ac, run-b4d6ba0e, run-cfae92b6, run-d6d8563b, run-df2bcff0, run-f4161fae, run-feb95f40). All deleted except preserved `run-641b399e` (patch sha `4dfdf3f8...` unchanged). Fixed `execute`/`execute-all --dry-run` to be strictly read-only plan: verifies schedule/config, no mkdir/clone/control/trial/capture/finalize or file writes, reports would_stage/skip, control strings (`/weconverge off/on/reset` and trial `omp ... @PROMPT.md`), and resume_next; adds before/after `benchmark/runs` directory invariant (pass).
+
+- Dry-run proof (read-only): `node scripts/benchmark-weconverge.mjs execute --run run-df2bcff0 --dry-run` → plan: would_stage true, control `omp ... \"/weconverge off\"`, trial `omp ... @.../run-df2bcff0/PROMPT.md`, reset, no files mutated, invariant `before [run-641b399e] after [run-641b399e] pass`. `node scripts/benchmark-weconverge.mjs execute-all --dry-run` → plan for 40 runs (skip 0, 39 would stage/control/trial/capture), total 40 read_only true, invariant pass, resume_next `run-df2bcff0` index 1, exits 0 in 0.15s, no clone, zero provider calls.
 
 - Resume: first run finalized at index 0, next unfinalized is `run-df2bcff0` index 1 (matplotlib OFF2) — verifier confirms.
 
 ## Owned tracked paths (5 for executor)
 - `benchmark/execution.json` (new immutable execution config)
-- `scripts/benchmark-weconverge.mjs` (execution commands)
+- `scripts/benchmark-weconverge.mjs` (execution commands, dry-run read-only fix)
 - `scripts/check-benchmark.mjs` (extended verifier)
-- `.ai/loops/state.json` (executor gate + first-run evidence)
+- `.ai/loops/state.json` (executor gate + first-run evidence + dry-run fix)
 - `.ai/loops/reports/2026-08-20-weconverge-benchmark-bootstrap.md` (this report)
 
-Runtime `benchmark/runs/` remains ignored; individual run artifacts (`grading.json`, `result-anon.json`, `patch.json`, `patch.diff`, `final-answer.txt`, `controller.json`) stay under ignored path.
+Runtime `benchmark/runs/` remains ignored; only `run-641b399e` finalized artifact set remains; individual run artifacts (`grading.json`, `result-anon.json`, `patch.json`, `patch.diff`, `final-answer.txt`, `controller.json`) stay under ignored path.
 
 ## Residual & Blockers
-- No residual failures; all gates pass including executor.
-- No blocker: execution config frozen, first run captured truthfully, verifier extended and passing, resume idempotency verified.
-- Remaining 39 runs not yet executed (sequential execution to be run under OMP hub supervision; no automatic scoring yet).
+- No residual failures; all gates pass including executor and dry-run read-only.
+- No blocker: execution config frozen, first run preserved exactly, verifier passing, dry-run invariant pass, 11 fake runs removed.
+- Remaining 39 runs not yet executed (sequential execution to be run under OMP hub supervision; no automatic scoring yet; dry-run proves plan without mutation).

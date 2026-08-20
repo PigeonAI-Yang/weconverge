@@ -2,7 +2,7 @@
   "loop": "weconverge-benchmark-bootstrap",
   "date": "2026-08-20",
   "purpose": "determine whether WEConverge materially improves final code-repair quality",
-  "status": "executor_ready",
+  "status": "executor_ready_fixed_readonly_dryrun",
   "provenance": {
     "source": "princeton-nlp/SWE-bench_Verified",
     "revision": "c104f840cc67f8b6eec6f759ebc8b2693d585d4a",
@@ -57,7 +57,8 @@
       "git_head": "aa55975c7d3f6c9f6d7f68accc41bb7cadf0eb9a",
       "patch_bytes": 1937,
       "final_answer_bytes": 749
-    }
+    },
+    "dry_run_readonly": true
   },
   "gates": {
     "corpus": "pass",
@@ -68,7 +69,8 @@
     "execution_config": "pass",
     "executor": "pass",
     "capture": "pass",
-    "resume": "pass"
+    "resume": "pass",
+    "dry_run_readonly": "pass"
   },
   "permissions": {
     "no_new_dependencies": true,
@@ -80,5 +82,12 @@
     "wall_minutes": 15,
     "max_tracked_files": 8,
     "attempts": "one implementation + one gate repair"
+  },
+  "fix": {
+    "dry_run_bug": "previous dry-run staged/cloned/finalized fake runs and timed out at index 11",
+    "removed_runs": ["run-3bf5662d", "run-3c436fba", "run-49ae8d41", "run-67d3b4ae", "run-778ac8ac", "run-b4d6ba0e", "run-cfae92b6", "run-d6d8563b", "run-df2bcff0", "run-f4161fae", "run-feb95f40"],
+    "preserved": "run-641b399e exact (patch sha 4dfdf3..., final answer sha 1fb221...)",
+    "invariant": "before/after benchmark/runs dir listing identical for dry-run single and execute-all",
+    "dry_run_mode": "read-only plan: no mkdir/clone/control/trial/capture/finalize or file writes, verifies schedule/config, reports would-stage/skip, control strings, trial command, resume_next"
   }
 }
