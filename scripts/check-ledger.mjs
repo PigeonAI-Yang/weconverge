@@ -3,7 +3,7 @@
 // Enforces, in addition to dependency/status invariants:
 //   1. done tasks must reference artifacts/evidence that really exist on disk;
 //   2. T07 (historical AC-101..115 via ACCEPTANCE.md) may not be `done` while any AC row in ACCEPTANCE.md is BLOCKED / SOURCE GAP;
-//   3. T14 (revised advisory AC-L01..L05 / AC-C01..C03 via ACCEPTANCE_ADVISORY.md) may not be `done` while any revised AC is not PASS (SOURCE GAP / NOT OBSERVED / BLOCKED);
+//   3. T14 (revised advisory AC-L01/L03/L04/L05 / AC-C01..C03 via ACCEPTANCE_ADVISORY.md, AC-L02 RETIRED per D-08) may not be `done` while any active revised AC is not PASS (SOURCE GAP / NOT OBSERVED / BLOCKED);
 //   4. commit hashes cited in verifiedBy/artifacts must resolve in git; a verifiedBy
 //      claiming a clean worktree requires `git status --porcelain` to be empty; a
 //      top-level "head" field must equal `git rev-parse HEAD`. If the target tree is
@@ -11,7 +11,7 @@
 //      with a printed note instead of failing;
 //   5. PLAN.md dependency-block statuses must match ledger.json;
 //   6. when T04/T05/T06 are done, the typecheck/test gates must actually exit 0;
-//   7. advisory migration: historical truth preserved, advisory implementation T11/T12/T13 done at 48621b9, T14 blocked on revised ACs, at most one in_progress (zero valid).
+//   7. advisory migration: historical truth preserved, advisory implementation T11/T12/T13 done at 48621b9 (T13 requires AC-A18 PASS + 110/110), T14 blocked on active revised ACs (AC-L02 RETIRED excluded), AC-L02 must be RETIRED and AC-A18 must be PASS in ACCEPTANCE_ADVISORY before T13 may be done, at most one in_progress (zero valid); old T07 still gates AC-101..115, T14 gates revised active AC-L01/L03/L04/L05/C01/C02/C03.
 // Usage: node scripts/check-ledger.mjs
 //        WECONVERGE_ROOT=<fixture-or-repo-root> node scripts/check-ledger.mjs
 import { execFileSync } from "node:child_process";
@@ -124,6 +124,36 @@ function testGateOk() {
     "test/mechanical.test.ts",
   ]);
 }
+function extensionIntegrationGateOk() {
+  return runGate("test:extension-integration", "node", [
+    "--experimental-strip-types",
+    "--loader",
+    "./scripts/node-ts-loader.mjs",
+    "test/extension.integration.test.ts",
+  ]);
+}
+function advisoryAcRetired(advisoryText, ac) {
+  const re = new RegExp(`\\b${ac}\\b`, "i");
+  for (const line of advisoryText.split(/\r?\n/)) {
+    if (!re.test(line)) continue;
+    if (/\bRETIRED\b/i.test(line)) return true;
+  }
+  return false;
+}
+function advisoryAcPass(advisoryText, ac) {
+  const re = new RegExp(`\\b${ac}\\b`, "i");
+  for (const line of advisoryText.split(/\r?\n/)) {
+    if (!re.test(line)) continue;
+    if (line.includes("|")) {
+      const cols = line.split("|");
+      const verdict = cols.length >= 3 ? (cols[2] || "") : "";
+      if (/\*\*PASS\*\*/i.test(verdict)) return true;
+    } else {
+      if (/\bPASS\b/i.test(line) && !/\bNOT PASS\b/i.test(line)) return true;
+    }
+  }
+  return false;
+}
 
 // ---------- ACCEPTANCE.md AC status parsing (historical) ----------
 // A line mentioning an AC counts as BLOCKED/unpassed when it carries an explicit
@@ -143,7 +173,7 @@ function acceptanceAcBlocked(acceptance, ac) {
 }
 
 // ---------- ACCEPTANCE_ADVISORY.md revised AC parsing ----------
-// For revised ACs, verdict is in markdown table row: | **AC-L02** | **SOURCE GAP** | ...
+// For revised ACs, verdict is in markdown table row: | **AC-L05** | **SOURCE GAP** | ...
 // Consider blocked if verdict column contains SOURCE GAP / NOT OBSERVED / BLOCKED / FAIL (not PASS).
 // AC-L03 is PASS with subfield SOURCE GAP noted in evidence column, but verdict column is PASS -> not blocked.
 function advisoryAcBlocked(advisoryText, ac) {
@@ -243,7 +273,7 @@ for (const t of ledger.tasks) {
   }
 }
 
-// ---------- 2. T07 historical gate (ACCEPTANCE.md AC-101..115) + advisory live gate (ACCEPTANCE_ADVISORY.md AC-L01..L05/AC-C01..C03) ----------
+// ---------- 2. T07 historical gate (ACCEPTANCE.md AC-101..115) + advisory live gate (ACCEPTANCE_ADVISORY.md AC-L01/L03/L04/L05/C01/C02/C03, AC-L02 RETIRED) ----------
 {
   let acceptance = "";
   try {
@@ -280,11 +310,14 @@ for (const t of ledger.tasks) {
     const advisoryIds = ledger.advisoryGate?.liveTaskIds ?? [];
     const advisoryAcs = ledger.advisoryGate?.realOmpAcs ?? [];
     // Validate advisoryGate uses revised AC ids (not old AC-101..115)
+    if (advisoryAcs.includes("AC-L02")) {
+      errors.push(`advisoryGate must not list AC-L02 (RETIRED per D-08): ${advisoryAcs.join(",")}`);
+    }
     const hasOld = advisoryAcs.some((ac) => /^AC-10\d$/.test(ac) || /^AC-11\d$/.test(ac));
     if (hasOld) {
       errors.push(`advisoryGate lists old AC-101..115 but must use revised AC-L01..L05/AC-C01..C03: ${advisoryAcs.join(",")}`);
     }
-    const expectedRevised = ["AC-L01","AC-L02","AC-L03","AC-L04","AC-L05","AC-C01","AC-C02","AC-C03"];
+    const expectedRevised = ["AC-L01","AC-L03","AC-L04","AC-L05","AC-C01","AC-C02","AC-C03"]; // AC-L02 RETIRED per D-08
     const missingRevised = expectedRevised.filter((ac) => !advisoryAcs.includes(ac));
     if (missingRevised.length > 0) {
       errors.push(`advisoryGate missing revised ACs: ${missingRevised.join(",")} (expected ${expectedRevised.join(",")})`);
@@ -470,10 +503,32 @@ if (!gitAvailable()) {
   }
   if (t13?.status === "done") {
     const vb = t13.verifiedBy ?? "";
-    if (!/35.*60/i.test(vb) || !/65 passed.*0 failed/i.test(vb)) {
-      errors.push("T13: verifiedBy must cite POLICY 35 tokens <=60, 65 passed 0 failed");
+    if (!/110 passed.*0 failed/i.test(vb)) {
+      errors.push("T13: verifiedBy must cite extension integration 110 passed 0 failed (AC-A18)");
+    }
+    if (!/AC-A18/i.test(vb)) {
+      errors.push("T13: verifiedBy must cite AC-A18 deterministic official-hook handoff");
     }
     if (!/typecheck:core.*exit 0/i.test(vb)) warnings.push("T13: verifiedBy should cite typecheck:core exit 0");
+    // Enforce AC-A18 PASS and AC-L02 RETIRED in ACCEPTANCE_ADVISORY before T13 may be done
+    let advisoryForT13 = "";
+    try { advisoryForT13 = readFileSync(join(root, "ACCEPTANCE_ADVISORY.md"), "utf8"); } catch {}
+    if (advisoryForT13) {
+      if (!advisoryAcRetired(advisoryForT13, "AC-L02")) {
+        errors.push("T13: ACCEPTANCE_ADVISORY must mark AC-L02 as RETIRED (D-08) before T13 may be done");
+      }
+      if (!advisoryAcPass(advisoryForT13, "AC-A18")) {
+        errors.push("T13: ACCEPTANCE_ADVISORY must mark AC-A18 as PASS before T13 may be done");
+      }
+    }
+    // Also verify extension integration gate actually passes (110/110)
+    const eg = extensionIntegrationGateOk();
+    if (!eg.ok) {
+      errors.push(`T13: extension integration gate failed (110 passed required); output: ${(eg.output||"").slice(0,500)}`);
+    } else {
+      const out = String(eg.output||"");
+      // check output contains 110 passed if captured? runGate currently discards output on success, so just ensure ok
+    }
   }
   const t14 = byId.get("T14");
   if (t14 && t14.status === "done") {
@@ -484,13 +539,24 @@ if (!gitAvailable()) {
   }
   if (t14 && t14.status === "blocked") {
     const vb = (t14.verifiedBy ?? "") + " " + (t14.note ?? "");
-    // Must reference the four blockers
-    const need = ["AC-L02", "AC-L04", "AC-L05", "AC-C03"];
+    // Must reference the three active blockers (AC-L02 excluded as RETIRED)
+    const need = ["AC-L04", "AC-L05", "AC-C03"];
     for (const ac of need) {
       if (!vb.includes(ac)) warnings.push(`T14 blocked evidence should reference ${ac}`);
     }
+    if (vb.includes("AC-L02") && /SOURCE GAP|NOT OBSERVED|BLOCKED/i.test(vb) && /AC-L02.*?(SOURCE GAP|NOT OBSERVED|BLOCKED)/i.test(vb)) {
+      // If AC-L02 is listed as a current blocker, flag as error (should be RETIRED mention only)
+      // Allow mention of AC-L02 as RETIRED, but not as SOURCE GAP blocker
+      if (!/RETIRED/i.test(vb)) {
+        warnings.push("T14 should not list AC-L02 as SOURCE GAP/NOT OBSERVED blocker (RETIRED per D-08)");
+      }
+      if (/AC-L02\s+SOURCE GAP|AC-L02.*SOURCE GAP/i.test(vb) && !/RETIRED/i.test(vb)) {
+        errors.push("T14 must not list AC-L02 as active SOURCE GAP blocker (RETIRED per D-08)");
+      }
+    }
     if (!/SOURCE GAP/i.test(vb) || !/NOT OBSERVED/i.test(vb)) warnings.push("T14 blocked evidence should cite SOURCE GAP / NOT OBSERVED");
     if (!/ACCEPTANCE_ADVISORY\.md/i.test(vb)) warnings.push("T14 blocked evidence should cite ACCEPTANCE_ADVISORY.md");
+    if (!/RETIRED/i.test(vb) || !/AC-L02/i.test(vb)) warnings.push("T14 blocked evidence should note AC-L02 RETIRED per D-08");
   }
   if (!ledger.advisoryMigration) {
     warnings.push("ledger missing advisoryMigration note (pure-advisory authorization should be recorded)");
@@ -507,7 +573,7 @@ if (!gitAvailable()) {
 const counts = { pending: 0, in_progress: 0, done: 0, blocked: 0 };
 for (const t of ledger.tasks) counts[t.status]++;
 
-console.log("WEConverge ledger check (v5 pure advisory)");
+console.log("WEConverge ledger check (v6 pure advisory D-08)");
 console.log(`  root: ${root}`);
 console.log(`  tasks: ${ledger.tasks.length}  done=${counts.done} in_progress=${counts.in_progress} pending=${counts.pending} blocked=${counts.blocked}`);
 if (errors.length) {
@@ -518,4 +584,4 @@ if (errors.length) {
 if (warnings.length) {
   for (const w of warnings) console.warn("  warn: " + w);
 }
-console.log("OK: dependency, evidence, T07+advisory-gate, git-consistency, PLAN-consistency and gate invariants satisfied.");
+console.log("OK: dependency, evidence, T07+advisory-gate (D-08: AC-L02 RETIRED, AC-A18 PASS), git-consistency, PLAN-consistency and gate invariants satisfied.");

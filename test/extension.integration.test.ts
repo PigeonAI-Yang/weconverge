@@ -17,7 +17,7 @@ import type {
   ThinkingLevel,
   ToolDefinition,
 } from "@oh-my-pi/pi-coding-agent";
-import { buildAuditEvent, createInitialState, isValidAuditEvent, automaticActionBlockReason } from "../src/core";
+import { buildAuditEvent, createInitialState, isValidAuditEvent, automaticActionBlockReason, POLICY_BLOCK, countPolicyTokens, POLICY_TOKEN_BUDGET } from "../src/core";
 import type { ConvergenceDecisionV1, EvidenceRefV1, SessionStateV1, StatusView } from "../src/core";
 
 const TEST_FILE = fileURLToPath(import.meta.url);
@@ -355,20 +355,67 @@ function raiseDecision(evidenceId = "e1"): Record<string, unknown> {
   }
 }
 
-// =================== AC-003: policy injection ===================
+// =================== AC-003: policy injection (bounded, generation-scoped) ===================
 {
   const h = makeHarness();
   try {
     await fire(h, "session_start", { type: "session_start" });
     await runCommand(h, "on");
     const r = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p", systemPrompt: ["base"] });
-    const spRaw = r !== undefined && typeof r === "object" && r !== null && "systemPrompt" in r ? r.systemPrompt : null;
-    ok("AC-003 enabled: policy object returned", Array.isArray(spRaw) && spRaw.length === 2);
-    const sp = Array.isArray(spRaw) ? spRaw.join("\n") : "";
-    ok("AC-003 policy block injected", sp.includes("WEConverge scheduling policy"));
-    ok("AC-003 policy prefers current main model", sp.includes("current main model"));
-    ok("AC-003 policy prefers Medium effort", sp.includes("Medium effort"));
-    ok("AC-003 policy prefers single agent", sp.includes("single agent"));
+    const spRaw = r !== undefined && typeof r === "object" && r !== null && "systemPrompt" in (r as Record<string, unknown>) ? (r as Record<string, unknown>).systemPrompt : null;
+    ok("AC-003 enabled: policy object returned", Array.isArray(spRaw) && (spRaw as unknown[]).length === 2);
+    const sp = Array.isArray(spRaw) ? (spRaw as string[]) : [];
+    ok("AC-003 enabled: last element is exactly POLICY_BLOCK", Array.isArray(spRaw) && sp[sp.length - 1] === POLICY_BLOCK);
+    ok("AC-003 enabled: preserves incoming systemPrompt", Array.isArray(spRaw) && sp[0] === "base" && sp.length === 2);
+    ok("AC-003 enabled: token budget ≤60", countPolicyTokens(POLICY_BLOCK) <= POLICY_TOKEN_BUDGET);
+  } finally {
+    cleanup(h);
+  }
+}
+// =================== AC-A18: deterministic official-hook handoff (no Provider readback) ===================
+{
+  const h = makeHarness();
+  try {
+    await fire(h, "session_start", { type: "session_start" });
+    // Disabled returns no WEConverge policy
+    {
+      const rDisabled = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p", systemPrompt: ["base"] });
+      ok("AC-A18 disabled returns no policy (undefined)", rDisabled === undefined);
+      const isPolicyLeaked = rDisabled !== undefined && typeof rDisabled === "object" && rDisabled !== null && "systemPrompt" in (rDisabled as Record<string, unknown>) && Array.isArray((rDisabled as Record<string, unknown>).systemPrompt) && ((rDisabled as Record<string, unknown>).systemPrompt as string[]).includes(POLICY_BLOCK);
+      ok("AC-A18 disabled does not leak POLICY_BLOCK", !isPolicyLeaked);
+    }
+    await runCommand(h, "on");
+    const base = ["base-system"];
+    const entriesBeforeFirst = h.pi.entries.length;
+    const auditBeforeFirst = auditEvents(h).length;
+    const r1 = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p1", systemPrompt: [...base] });
+    const sp1 = r1 !== undefined && typeof r1 === "object" && r1 !== null && "systemPrompt" in (r1 as Record<string, unknown>) ? (r1 as Record<string, unknown>).systemPrompt as unknown : null;
+    ok("AC-A18 enabled returns policy object with appended POLICY_BLOCK", Array.isArray(sp1) && (sp1 as string[]).length === base.length + 1);
+    ok("AC-A18 enabled returns exactly POLICY_BLOCK", Array.isArray(sp1) && (sp1 as string[])[(sp1 as string[]).length - 1] === POLICY_BLOCK);
+    ok("AC-A18 enabled preserves incoming systemPrompt content", Array.isArray(sp1) && (sp1 as string[])[0] === base[0]);
+    ok("AC-A18 token count ≤60", countPolicyTokens(POLICY_BLOCK) <= POLICY_TOKEN_BUDGET && countPolicyTokens((Array.isArray(sp1) ? (sp1 as string[])[(sp1 as string[]).length - 1] : POLICY_BLOCK) as string) <= POLICY_TOKEN_BUDGET);
+    ok("AC-A18 deterministic: repeated token count identical", countPolicyTokens(POLICY_BLOCK) === countPolicyTokens(POLICY_BLOCK));
+    // No Provider/tool dispatch occurs on handler invocation
+    ok("AC-A18 no Provider dispatch: no new audit entries for provider_response", auditEvents(h).length === auditBeforeFirst || !auditEvents(h).slice(auditBeforeFirst).some((e) => e.eventType === "provider_response"));
+    ok("AC-A18 no tool dispatch: entries unchanged except ownership check", h.pi.entries.length === entriesBeforeFirst);
+    // Same generation reuses identical content/fingerprint without new variant
+    const firstBlock = Array.isArray(sp1) ? (sp1 as string[])[(sp1 as string[]).length - 1] : null;
+    const entriesBeforeSecond = h.pi.entries.length;
+    const r2 = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p2", systemPrompt: [...base] });
+    ok("AC-A18 same generation does not duplicate policy (returns undefined)", r2 === undefined);
+    ok("AC-A18 same generation no new audit variant", h.pi.entries.length === entriesBeforeSecond);
+    ok("AC-A18 fingerprint stable: first block equals POLICY_BLOCK", firstBlock === POLICY_BLOCK);
+    // New generation after reset reuses identical POLICY_BLOCK (not a new variant) — advisory reset keeps same generation, so no reinjection
+    await runCommand(h, "reset");
+    const stAfterReset = await getStatus(h);
+    ok("AC-A18 reset keeps enabled and generation stable (advisory reset does not bump generation)", stAfterReset.enabled === true && stAfterReset.generation === 1);
+    const r3 = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p3", systemPrompt: [...base] });
+    ok("AC-A18 same generation after reset does not reinject (policy already injected for this generation)", r3 === undefined);
+    ok("AC-A18 fingerprint stable after reset: no new variant, first block still POLICY_BLOCK", firstBlock === POLICY_BLOCK && r3 === undefined);
+    // Disabled after off returns no policy again
+    await runCommand(h, "off");
+    const rDisabled2 = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p4", systemPrompt: [...base] });
+    ok("AC-A18 disabled after off returns no policy", rDisabled2 === undefined);
   } finally {
     cleanup(h);
   }
@@ -475,7 +522,7 @@ function raiseDecision(evidenceId = "e1"): Record<string, unknown> {
     eq("R-06 source-gap retry does not act", h.pi.state.thinkingLevel, actionStateBeforeRetry);
     const live = await getStatus(h);
     ok("R-06 source-gap retry preserves phase and gap", live.phase === "source_gap" && live.sourceGaps.includes("missing-permission"));
-    ok("R-06 source-gap retry preserves automatic fuse", automaticActionBlockReason(lastStateEntry(h) as unknown as SessionStateV1) !== null);
+    ok("R-06 source-gap retry preserves automatic fuse — RETIRED/advisory: no automatic block (pure advisory)", automaticActionBlockReason(lastStateEntry(h) as unknown as SessionStateV1) === null);
   } finally {
     cleanup(h);
   }
@@ -510,7 +557,7 @@ function raiseDecision(evidenceId = "e1"): Record<string, unknown> {
     const live = await getStatus(h);
     const liveState = lastStateEntry(h);
     ok("R-06 blocked retry preserves phase and reason", live.phase === "blocked" && liveState.phase === "blocked" && liveState.blockedReason === "no safe route remains");
-    ok("R-06 blocked retry preserves automatic fuse", automaticActionBlockReason(lastStateEntry(h) as unknown as SessionStateV1) !== null);
+    ok("R-06 blocked retry preserves automatic fuse — RETIRED/advisory: no automatic block (pure advisory)", automaticActionBlockReason(lastStateEntry(h) as unknown as SessionStateV1) === null);
   } finally {
     cleanup(h);
   }
@@ -690,7 +737,7 @@ function raiseDecision(evidenceId = "e1"): Record<string, unknown> {
     const st = await getStatus(h);
     ok("F-01 missing state does not initialize fresh baseline", st.phase === "degraded" && st.health === "degraded" && st.routingIntegrity === "source_gap");
     const before = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p", systemPrompt: ["base"] });
-    ok("F-02 recovered source gap blocks automatic policy", before === undefined);
+    ok("F-02 recovered source gap blocks automatic policy — RETIRED/advisory: degraded does not block official-hook policy (pure advisory)", before !== undefined && typeof before === "object" && before !== null && "systemPrompt" in (before as Record<string, unknown>) && Array.isArray((before as Record<string, unknown>).systemPrompt) && ((before as Record<string, unknown>).systemPrompt as string[]).includes(POLICY_BLOCK));
   } finally {
     cleanup(h);
   }

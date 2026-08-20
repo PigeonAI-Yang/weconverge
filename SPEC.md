@@ -1,10 +1,10 @@
 # WEConverge SPEC
 
-- 状态：Advisory normative baseline v1.1.0-advisory — Owner-approved pure advisory (2026-08-20)
+- 状态：Advisory normative baseline v1.1.0-advisory — Owner-approved pure advisory (2026-08-20) + D-08 correction (2026-08-20, Owner-directed: AC-L02 Provider payload readback RETIRED → AC-A18 deterministic hook handoff)
 - 历史基线：v1.0.0 (2026-08-19) 原文保留于本文第 1–12 章作为历史记录（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），仅通过本文第 0 章与第 13 章以后的咨询层显式覆盖
-- 咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` (Owner-approved 2026-08-20)
+- 咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` (Owner-approved 2026-08-20) + D-08 `before_agent_start` 官方 hook 权威交接
 - 历史基线：`docs/spark/2026-08-19-weconverge-design.md`
-- 上游：`PRD.md v1.1.0-advisory`（含 §0 咨询层）
+- 上游：`PRD.md v1.1.0-advisory`（含 §0 咨询层与 D-08）
 - 适用范围：WEConverge v1 OMP 用户级 Extension — 咨询层为现行实施依据
 
 > **实施说明**：本文第 0 章与第 13 章以后为现行咨询规范；第 1–12 章为 v1.0.0 历史规范保留（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），冲突处以咨询层为准（见 §0.2）。
@@ -16,11 +16,11 @@
 ### 0.1 权威与覆盖规则
 
 1. 历史层（§1–12, v1.0.0）保留（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），仅作追溯；咨询层（§0, §13+）为现行规范。
-2. 任一历史 `CAP/AC` 的强制语义（block/mutation/cancel/auto-dispatch/pre-provider Max proof/强制并发·波次·去重·紧凑输出）退役必须在 §0.2–§0.3 显式列出；未列入者继续有效。
-3. 咨询层新增能力为 `CAP-A01..A08`，新增验收为 `AC-A01..A17`（机械/状态）、`AC-L01..L05`（真实 OMP 观察）、`AC-C01..C03`（成本）；历史 `AC-001..044` / `AC-101..115` 中被 §0.3 列为 `RETIRED` 的项永不按 PASS 呈现。
-4. `REQ→CAP→AC` 映射：历史映射保留于 §12；现行映射为 §13.6（`REQ-100..115 → CAP-A → AC-A/L/C`）。
+2. 任一历史 `CAP/AC` 的强制语义（block/mutation/cancel/auto-dispatch/pre-provider Max proof/强制并发·波次·去重·紧凑输出）或自相矛盾的 Provider payload 回读要求退役必须在 §0.2–§0.3 显式列出；未列入者继续有效。
+3. 咨询层新增能力为 `CAP-A01..A08`，新增验收为 `AC-A01..A18`（机械/状态, 含 D-08 AC-A18）、`AC-L01..L05`（真实 OMP 观察，其中 AC-L02 已 RETIRED per D-08）、`AC-C01..C03`（成本）；历史 `AC-001..044` / `AC-101..115` 中被 §0.3 列为 `RETIRED` 的项永不按 PASS 呈现。
+4. `REQ→CAP→AC` 映射：历史映射保留于 §12；现行映射为 §13.6（`REQ-100..115 → CAP-A → AC-A/L/C`，含 AC-A18 → REQ-100/CAP-A01）。
 
-### 0.2 D-01..D-07 显式覆盖
+### 0.2 D-01..D-08 显式覆盖
 
 | 决定 | 历史条款 | 咨询层处置 |
 |---|---|---|
@@ -31,11 +31,11 @@
 | D-05 | SPEC §6.1 CP-001 / CAP-001：Extension 可派发外部探索 | 退役为观察；探索仅由父原生 `task` 派发（CAP-A02） |
 | D-06 | Runtime：每父会话一运行时 + 父子链追踪 | 修订为单活 full runtime + 有界 tombstones（CAP-A07） |
 | D-07 | SPEC §22 / ACCEPTANCE：AC-105/107/108 阶梯完整性 PASS 门 | 退役；以 §13 三层分立验收替代（CAP-A08） |
+| D-08 | SPEC §13.2 / TECHNICAL_DESIGN §12 / 纯咨询设计 §12：AC-L02 要求启用后首个新 generation 的 `before_agent_start` systemPrompt 在最终 Provider payload 中可回读验证（≤60 tokens） | **RETIRED (never PASS)** — Provider-wire payload 内省不是 Extension 职责；下游 OMP 组装为 OMP 官方 `before_agent_start.systemPrompt` hook 合同，超出 WEConverge 责任边界。新增 **AC-A18** 确定性官方-hook 握手：enabled 时注册的公共 `before_agent_start` handler 确定性返回精确有界 WEConverge policy 块；同 generation 复用相同 content/fingerprint；disabled 返回无 policy；token ≤60；无需 Provider 调用/回读。AC-L02 缺失不记为产品 SOURCE GAP |
 
 ### 0.3 旧强制 AC 退役清单（RETIRED — 不得按 PASS）
 
-`AC-010` (外部探索证据门强制拒绝)、`AC-011`/`AC-012` (并发/波次强制拒绝)、`AC-013` (子包强制最小化)、`AC-016..018` 的子/自动阶梯部分、`AC-019`/`AC-108` 的 pre-provider Max 强制拒绝、`AC-105`/`AC-107` 的 Extension 派发成功证据。现行替代见 §13。
-
+`AC-010` (外部探索证据门强制拒绝)、`AC-011`/`AC-012` (并发/波次强制拒绝)、`AC-013` (子包强制最小化)、`AC-016..018` 的子/自动阶梯部分、`AC-019`/`AC-108` 的 pre-provider Max 强制拒绝、`AC-105`/`AC-107` 的 Extension 派发成功证据、`AC-L02` (最终 Provider payload 回读 — **RETIRED per D-08, never PASS**)。现行替代见 §13（AC-L02 → AC-A18）。
 ---
 
 ## 1. 规范解释
@@ -878,18 +878,19 @@ interface AuditEventV1 {
 | AC-A15 | 审计：分层 `requested/expected/observed/inferred/source_gap`、脱敏、自由文本 ≤200 chars、凭据/隐藏推理/完整父上下文不记录；写入失败仅 `degraded` | 机械 |
 | AC-A16 | 命令：`on/off/status/reset` 参数精确校验；`status` 只读且含 `advisoryNote: pure advisory — no enforcement` 与 `priceTelemetry: SOURCE GAP`；`off` 不取消远端子、`reset` 不改 `enabled` 不删审计 | 机械 |
 | AC-A17 | 配置：`modelRoles`/`task.agentModelOverrides` 只读；`enabled` 双轨持久化；`--no-session` 记 `degraded` 而非伪造 | 机械 |
+| AC-A18 | **确定性官方-hook 握手 (D-08)**：注册的公共 `before_agent_start` handler 在 enabled 时确定性返回精确有界 WEConverge policy 块；同 generation 复用相同 content/fingerprint；disabled 返回无 policy；token ≤60；无需 Provider 调用/回读。证据为 handler 返回值与 fingerprint 复用断言（deterministic），不依赖模型实际是否发射 `task` 的行为 canary | 机械：handler 返回值 + fingerprint 复用 + token 计数 |
 
 ### 13.2 真实 OMP 观察验收（Live — observed, not enforced）
 
 | AC | 场景与通过条件 | 证据层 |
 |---|---|---|
 | AC-L01 | 安装与加载：source inventory 唯一源码；junction 指向它；OMP 正式加载成功且无 load error | 真实：inventory + junction + load |
-| AC-L02 | 策略注入：启用后首个新 generation 的 `before_agent_start` 观测到 `systemPrompt` 含策略文本（≤60 tokens） | 真实：generation 始端事件 |
+| AC-L02 | **RETIRED (never PASS) per D-08** — 原“启用后首个新 generation 的 `before_agent_start` 观测到 `systemPrompt` 含策略文本（≤60 tokens）且可在最终 Provider payload 中回读验证”已退役。Provider-wire payload 内省不是 Extension 职责；下游 OMP 组装为 OMP 官方 `before_agent_start.systemPrompt` hook 合同，超出 WEConverge 责任边界。其缺失不记为产品 SOURCE GAP；替代为 AC-A18 确定性握手 | —（RETIRED，不计入 live 必过门；历史文本保留于本行，active 门为 AC-A18） |
 | AC-L03 | 观察通道：父模型发射原生 `task` 时，`tool_call` observed `requested`、`tool_result` observed `SingleResult[]`、`task:subagent:*` 在有发射时可观测；`resolvedModel` 在有 progress 时可观测，否则记 `source_gap` | 真实：`tool_call`/`tool_result`/`task:subagent:*` |
 | AC-L04 | `off` 语义：`off` 后新 `task` 观测记为 `detached`，远端子任务由 OMP 继续执行不被取消；`status` 显示 `phase: disabled` | 真实 |
 | AC-L05 | 恢复与切换：`session_switch` 销毁旧 full runtime；`off/reset/end/switch` 的 owned effort 恢复有读回；public session-delete 无事件为 SOURCE GAP | 真实 |
 
-> 注：旧 `AC-105` (两真实 child + parent link + falsifier 区分) / `AC-107` (专业链) / `AC-108` (pre-provider Max 拒绝) 为 **RETIRED**；咨询层不以 Extension 派发成功为通过条件。
+> 注：旧 `AC-105` (两真实 child + parent link + falsifier 区分) / `AC-107` (专业链) / `AC-108` (pre-provider Max 拒绝) **及 `AC-L02` (Provider payload 回读)** 为 **RETIRED**；咨询层不以 Extension 派发成功或 Provider payload 回读为通过条件。**D-08**：AC-L02 永不按 PASS 呈现；模型是否实际遵从 policy 发射 `task` 为非确定性行为，不作为 AC-A18 验收 canary。
 
 ### 13.3 成本验收（Cost — token economics, observed）
 
@@ -959,7 +960,7 @@ interface AuditEventV1 {
 
 | 咨询 REQ | CAP-A | 现行 AC |
 |---|---|---|
-| REQ-100 | CAP-A01, CAP-A08 | AC-A01, AC-C01 |
+| REQ-100 | CAP-A01, CAP-A08 | AC-A01, AC-A18, AC-C01 |
 | REQ-101 | CAP-A02, CAP-A08 | AC-A02 |
 | REQ-102 | CAP-A02, CAP-A08 | AC-A03, AC-A04, AC-L03 |
 | REQ-103 | CAP-A02, CAP-A08 | AC-A05 |
@@ -976,16 +977,15 @@ interface AuditEventV1 {
 | REQ-114 | CAP-A04, CAP-A05 | AC-A06, AC-A08, AC-A09 |
 | REQ-115 | CAP-A01, CAP-A02, CAP-A08 | AC-C01, AC-C02, AC-C03 |
 
-> 每个咨询 REQ 至少映射一个可证伪 `AC-A/L/C`；无映射即为退化。
-
+> 每个咨询 REQ 至少映射一个可证伪 `AC-A/L/C`；无映射即为退化。**D-08**：AC-A18 映射至 REQ-100/CAP-A01，确定性官方-hook 握手为 active 门；`AC-L02` 已 RETIRED，不再作为 live 必过门。
 ## 21. 批准设计防退化矩阵
 
 | 设计硬约束 | SPEC 锁定点（v1.0.0） | 咨询层锁定点（v1.1-advisory） |
 |---|---|---|
 | 独立 OMP Extension，不改核心 | CAP-001、AC-101、AC-113 | CAP-A02, AC-A02, AC-L01 |
 | 默认关闭，启用后持续 | CAP-002、AC-001..003 | CAP-A01, CAP-A09, AC-A16 |
-| 当前主模型、Medium、单 Agent | CAP-003、AC-004、AC-103 | CAP-A01, AC-A01 |
-| 无前置分类调用 | CAP-003/CAP-008、AC-004、AC-103..104 | CAP-A01/A02, AC-A01/A02, AC-C02 |
+| 当前主模型、Medium、单 Agent | CAP-003、AC-004、AC-103 | CAP-A01, AC-A01/A18 (官方 hook 握手) |
+| 无前置分类调用 | CAP-003/CAP-008、AC-004、AC-103..104 | CAP-A01/A02, AC-A01/A02/A18, AC-C02 |
 | 内部多方案，只执行一个 | CAP-003、AC-005、AC-104 | CAP-A01, AC-A01 |
 | 不收敛后外部独立探路 | CAP-004/005、AC-010..015、AC-105 | CAP-A02 (观察), AC-A03/A04/L03, 原强制门 RETIRED |
 | 困难类型决定动作 | CAP-004、AC-009 | CAP-A04, AC-A06 |
@@ -994,15 +994,16 @@ interface AuditEventV1 {
 | 永不自动 Max | CAP-006/008、AC-017/019、AC-108 | CAP-A06 (模型感知), AC-A11 (咨询标注) |
 | 每波≤2、最多2波 | CAP-005/008、AC-011..012 | CAP-A06 (咨询值), AC-A12 |
 | 复用 OMP 角色 | CAP-007、AC-105/107 | CAP-A06, AC-A11 (expected) |
-| actual route 独立读回 | §4.4、CAP-007、AC-022、AC-105/107 | §4.4-A, CAP-A03, AC-A07/A14 |
-| SOURCE GAP/BLOCKED 分离 | CAP-009、AC-008/023/032/109 | CAP-A03/A10, AC-A14/A15 |
+| actual route 独立读回 | §4.4、CAP-007、AC-022、AC-105/107 | §4.4-A, CAP-A03, AC-A07/A14 (AC-L02 Provider payload 回读已 RETIRED per D-08) |
+| SOURCE GAP/BLOCKED 分离 | CAP-009、AC-008/023/032/109 | CAP-A03/A10, AC-A14/A15 (Provider payload 缺失不记为产品 SOURCE GAP per D-08) |
 | session/model 切换恢复 | CAP-002/006/012、AC-025..027、AC-037..039、AC-110..115 | CAP-A07/A05, AC-A10/A13/L05 |
 | 迟到结果 stale | CAP-005/012、AC-015/110 | CAP-A07, AC-A13 |
 | 命令/status | CAP-010、AC-028..029 | CAP-A09, AC-A16 |
 | 调度审计与脱敏 | CAP-011、AC-030..031 | CAP-A10, AC-A15 |
 | 无无限后台探索 | CAP-012、AC-033/112 | CAP-A02/A07, AC-A02/A13 |
-| 真实 OMP smoke | CAP-014、AC-101..115 | CAP-A08, AC-L01..L05 |
+| 真实 OMP smoke | CAP-014、AC-101..115 | CAP-A08, AC-A18 + AC-L01/L03/L04/L05 (AC-L02 RETIRED per D-08) |
 | 价格/额度缺失保留 SOURCE GAP | CAP-008/009、AC-023 | CAP-A03/A06, AC-A07/A15, AC-L03 |
+| 紧凑策略注入官方 hook 握手 | — | CAP-A01, AC-A18 (D-08: handler 确定性返回 ≤60 tokens, 同 generation fingerprint 复用, disabled 无 policy) |
 
 矩阵任一行在后续技术设计、计划、任务或实现中缺失，均视为退化并阻断交付。
 
@@ -1029,12 +1030,15 @@ WEConverge v1 只有在以下全部成立时完成：
 
 WEConverge v1.1-advisory 只有在以下全部成立时完成：
 
-1. §20.2 现行 `REQ-100..115 → CAP-A → AC-A/L/C` 全部有映射且无占位；
-2. 机械层 `AC-A01..A17` 与成本层 `AC-C01..C03` 全部通过（确定性）；
-3. 真实观察层 `AC-L01..L05` 对咨询合同有观测证据，且无退役 AC 被标记 PASS（见 §0.3）；
+1. §20.2 现行 `REQ-100..115 → CAP-A → AC-A/L/C` 全部有映射且无占位（含 AC-A18 → REQ-100/CAP-A01）；
+2. 机械层 `AC-A01..A18` 与成本层 `AC-C01..C03` 全部通过（确定性）；
+3. 真实观察层 `AC-L01/L03/L04/L05` 对咨询合同有观测证据，且无退役 AC 被标记 PASS（见 §0.3）；**`AC-L02` 已 RETIRED (never PASS) per D-08，不计入 live 必过门**；
 4. `requested/expected/observed/inferred/source_gap` 永不混淆；
-5. `priceTelemetry: SOURCE GAP` 与 `resolvedEffort: source_gap` 诚实呈现；
+5. `priceTelemetry: SOURCE GAP` 与 `resolvedEffort: source_gap` 诚实呈现；**Provider payload 缺失不记为产品 SOURCE GAP per D-08**；
 6. 运行时为单活 full runtime + 有界 tombstones，无第二调度器/无轮询/无额外 LLM 调用，public session-delete 为 SOURCE GAP；
 7. 无 `task` 强制（block/mutation/cancel/auto-dispatch）；
-8. 禁区无 diff；
-9. Owner 完成最终验收。
+8. 紧凑策略官方 hook 握手 AC-A18 确定性通过（enabled 确定性返回有界 policy、同 generation fingerprint 复用、disabled 无 policy、≤60 tokens、无需 Provider 回读）；
+9. 禁区无 diff；
+10. Owner 完成最终验收。
+
+> **D-08 完成门变更**：T14 修订版 live 门排除已退役的 AC-L02，计入 AC-A18 确定性门；不以行为 canary（模型实际遵从 policy）作为证明。

@@ -1,9 +1,9 @@
 # WEConverge — TECHNICAL_DESIGN.md
 
-- 版本：1.1.0-advisory / 2026-08-20（纯咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md`，Owner-approved）
+- 版本：1.1.0-advisory / 2026-08-20（纯咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md`，Owner-approved）+ D-08 correction (AC-L02 RETIRED → AC-A18)
 - 历史基线：1.0.0 / 2026-08-19（原文保留于本文第 13 章及以后（§13+）作为历史追溯，除以 `> **咨询层…**` 标注的补充外无删除/重写；§0–12 为咨询层，冲突处以咨询层为准）
-- 上游：`PRD.md v1.1.0-advisory`、`SPEC.md v1.1.0-advisory`、`docs/spark/2026-08-20-weconverge-pure-advisory-design.md`
-- 权威顺序：Owner 显式决定 D-01..D-07 > PRD/SPEC 咨询层 > 历史基线 > 本文件咨询层 > 本文件历史层
+- 上游：`PRD.md v1.1.0-advisory`、`SPEC.md v1.1.0-advisory`、`docs/spark/2026-08-20-weconverge-pure-advisory-design.md`（含 D-08）
+- 权威顺序：Owner 显式决定 D-01..D-08 > PRD/SPEC 咨询层 > 历史基线 > 本文件咨询层 > 本文件历史层
 - 权威代码目录：`J:\PigeonYang\tools\weconverge`
 
 > **实施说明**：本文第 0–12 章为现行咨询技术设计；第 13 章及以后（§13+）为 v1.0.0 历史设计保留追溯（除显式标注的补充外无删除/重写）。
@@ -11,8 +11,6 @@
 ---
 
 ## 0. 咨询层修订记录
-
-### 0.1 覆盖声明
 
 | 决定 | 历史设计条款 | 咨询层处置 |
 |---|---|---|
@@ -23,8 +21,9 @@
 | D-05 | §6 CP-001 自动外部探索可派发 | 退役为观察 |
 | D-06 | §8 Runtime 每父会话一运行时 | 修订为单活 full runtime + 有界 tombstones；`session_switch` 销毁旧 runtime |
 | D-07 | §11/§12 ladder 完整性 PASS | 退役；以分层验收替代 |
+| D-08 | §12 AC-L02 最终 Provider payload 回读（启用后首个 generation 的 `before_agent_start` systemPrompt 必须在最终 Provider payload 中可回读验证） | **RETIRED (never PASS)** — Provider-wire payload 内省非 Extension 职责；下游 OMP 组装为官方 `before_agent_start.systemPrompt` hook 合同，超出 WEConverge 边界；替代为 AC-A18 确定性官方 hook 握手（enabled 确定性返回精确有界 policy 块、同 generation fingerprint 复用、disabled 无 policy、≤60 tokens、无 Provider 调用/回读） |
+### 0.2 设计选择（Owner-approved 2026-08-20 + D-08）
 
-### 0.2 设计选择（Owner-approved 2026-08-20）
 
 1. **纯咨询**：无 task override/wrapper、`ctx.invokeTool(task)`、阻断、输入变异、取消、自动派发、强制 `weconverge_decide` 前置。
 2. **紧凑 `before_agent_start` 策略**：唯一主动塑形机制为 `BeforeAgentStartEventResult.systemPrompt`（≤60 tokens / parent Provider request，generation-scoped）。
@@ -34,9 +33,7 @@
 6. **单活运行时 + 有界墓碑**：public session-delete 为 SOURCE GAP。
 7. **Decide 仅用于父-effort 与正式缺口**：常规探索不经 `weconverge_decide`。
 8. **父模型成本为主**：常规探索零 Extension 诱发 Provider 调用，直接原生 `task` 批处理，无轮询。
-
----
-
+9. **确定性官方 hook 握手 (D-08 / AC-A18)**：`before_agent_start` handler 在 enabled 时确定性返回精确有界 policy 块、同 generation fingerprint 复用、disabled 无 policy、≤60 tokens；下游 Provider payload 组装为 OMP 官方合同，不检验、不以行为 canary 证明。
 ## 1. 架构总览（咨询层 — 现行）
 
 ```
@@ -87,13 +84,13 @@
 
 ---
 
-## 3. 策略注入（SPEC CAP-A01, PRD REQ-100）
+## 3. 策略注入（SPEC CAP-A01, PRD REQ-100 — 含 D-08 AC-A18）
 
 - 通过 `before_agent_start` 返回 `BeforeAgentStartEventResult { systemPrompt: string[] }`。
 - 内容：English、咨询性、≤60 tokens / parent Provider request，一条 directive + 两条 bullets + 字面量 `task(context, tasks:[≤2])`。
 - 触发：`session_start`/`session_switch`/`off→on` 各一次 generation-scoped 注入事件；计费按每 parent Provider request 含该 policy 计（最坏 `≤60×T`，实际缓存/折扣为 SOURCE GAP）。
 - 可被模型忽略；无强制后效；失败仅记 `health: degraded`，不二次注入。
-
+- **D-08 确定性握手 (AC-A18)**：注册的公共 `before_agent_start` handler 在 enabled 时确定性返回精确有界 WEConverge policy 块；同 generation 复用相同 content/fingerprint；disabled 返回无 policy；token ≤60；无需 Provider 调用/回读；下游 OMP 组装为官方 hook 合同，不检验。
 ---
 
 ## 4. 观察器与事实分类（SPEC CAP-A02/A03, PRD REQ-102/103/110）
@@ -197,7 +194,7 @@ capabilities:
 
 ## 11. 机械验证（CAP-A08 机械层）
 
-`src/core/*` 零运行时 OMP 依赖，由 `test/mechanical.test.ts` 与 `test/extension.integration.test.ts` 在 fake `ExtensionAPI` 下确定性覆盖 AC-A01..A17 / AC-C01..C03：策略有界性、五类分离、observer fail-open、decide 窄门、父 effort 阶梯、tombstone 有界、audit 脱敏截断等。
+`src/core/*` 零运行时 OMP 依赖，由 `test/mechanical.test.ts` 与 `test/extension.integration.test.ts` 在 fake `ExtensionAPI` 下确定性覆盖 AC-A01..A18 / AC-C01..C03：策略有界性、官方 hook 握手确定性（AC-A18: enabled 确定性返回有界 policy 块、同 generation fingerprint 复用、disabled 无 policy、≤60 tokens、无 Provider 回读）、五类分离、observer fail-open、decide 窄门、父 effort 阶梯、tombstone 有界、audit 脱敏截断等。
 
 ---
 
@@ -205,14 +202,14 @@ capabilities:
 
 真实验证通过安装后的 OMP Extension 与真实会话事件**观察**（非强制派发）：
 
+- AC-A18：**确定性官方 hook 握手**（D-08 新增，机械层）：注册的公共 `before_agent_start` handler 在 enabled 时确定性返回精确有界 policy 块、同 generation 复用相同 content/fingerprint、disabled 返回无 policy、≤60 tokens、无 Provider 调用/回读（downstream OMP 组装为官方合同，不检验）；
 - AC-L01：junction 安装与加载；
-- AC-L02：`before_agent_start` 在 generation 始端注入可观测；
+- AC-L02：**RETIRED (never PASS) per D-08** — 原“`before_agent_start` 在 generation 始端注入可观测且可在最终 Provider payload 中回读”已退役；Provider-wire payload 内省非职责，下游组装为 OMP 官方 hook 合同，超出 WEConverge 边界；其缺失不记为产品 SOURCE GAP；历史文本保留于本行，active 门为 AC-A18；
 - AC-L03：`tool_call/tool_result/task:subagent:*` 在有发射时可观测；
 - AC-L04：`off` 语义；
 - AC-L05：`session_switch` 销毁旧 runtime 与恢复读回。
 
-`priceTelemetry: SOURCE GAP` 为唯一诚实价格陈述；`resolvedEffort` 恒为 `source_gap` 直至公开 API 暴露。
-
+`priceTelemetry: SOURCE GAP` 为唯一诚实价格陈述；`resolvedEffort` 恒为 `source_gap` 直至公开 API 暴露。**D-08**：Provider payload 缺失不记为产品 SOURCE GAP；不以模型是否实际遵从 policy 的行为 canary 作为 AC-A18 证明。
 ---
 
 ## 13. 历史技术设计（v1.0.0 保留追溯 — 不作为咨询层实施依据）

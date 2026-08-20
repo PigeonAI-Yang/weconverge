@@ -1,11 +1,11 @@
 # WEConverge — Pure Advisory Design
 
-- Date: 2026-08-20
-- Status: Owner-approved reduced design — pure advisory
+- Date: 2026-08-20 (D-08 correction 2026-08-20)
+- Status: Owner-approved reduced design — pure advisory + D-08 deterministic official-hook handoff (AC-L02 RETIRED → AC-A18)
 - Authority roots: `J:/PigeonYang/tools/weconverge`
 - Historical baseline preserved: `docs/spark/2026-08-19-weconverge-design.md` (Owner-approved 2026-08-19)
-- Supersession: This document supersedes the 2026-08-19 baseline only through explicit Owner decisions recorded on 2026-08-20. All supersession is explicit; no implicit replacement occurs.
-- Evidence: `docs/audits/2026-08-20-weconverge-pure-extension-design-adversarial-audit.md`, `docs/audits/2026-08-20-omp-capability-audit.md`, `PRD.md v1.0.0`, `SPEC.md v1.0.0`, `TECHNICAL_DESIGN.md v1.0.0`, `CAPABILITY_PROBE.md`, `ACCEPTANCE.md`, `REVIEW.md`, `J:/PigeonYang/github/oh-my-pi` source and `J:/OhMyPi/data/.omp/agent/config.yml`
+- Supersession: This document supersedes the 2026-08-19 baseline only through explicit Owner decisions recorded on 2026-08-20 (D-01..D-08). All supersession is explicit; no implicit replacement occurs.
+- Evidence: `docs/audits/2026-08-20-weconverge-pure-extension-design-adversarial-audit.md`, `docs/audits/2026-08-20-omp-capability-audit.md`, `PRD.md v1.1.0-advisory`, `SPEC.md v1.1.0-advisory`, `TECHNICAL_DESIGN.md v1.1.0-advisory`, `CAPABILITY_PROBE.md`, `ACCEPTANCE.md`, `REVIEW.md`, `J:/PigeonYang/github/oh-my-pi` source and `J:/OhMyPi/data/.omp/agent/config.yml`
 - Product: WEConverge (OMP user-level Extension, authority source `J:/PigeonYang/tools/weconverge`, installed via junction `J:\OhMyPi\data\.omp\agent\extensions\weconverge`)
 - Scope: Documentation only. This document does not authorize implementation, PRD/SPEC edits, source edits, ledger edits, tests, builds, or OMP core changes.
 
@@ -101,19 +101,17 @@ OMP Runtime (facts source)
 
 ---
 
-## 4. Components
-
-### 4.1 Policy injector (`before_agent_start` handler)
+### 4.1 Policy injector (`before_agent_start` handler — includes D-08 AC-A18)
 
 - Returns `BeforeAgentStartEventResult { systemPrompt: string[] }` when enabled.
-- Content is compact, bounded, English, and advisory: one directive, two bullet rules, and the literal `task(context, tasks:[≤2])` reference. Target ≤60 tokens.
-- Injection is advisory: the model may ignore it. No enforcement follows.
+- Content is compact, bounded, English, and advisory: one directive, two bullet rules, and the literal `task(context, tasks:[≤2])` reference. Target ≤60 tokens (AC-A18: deterministic, bounded).
+- Injection is advisory: the model may ignore it. No enforcement follows; behavior canary (model actually emitting `task`) is nondeterministic and not an AC-A18 proof.
 - Generation-scoped injection event: injected once on `session_start` / `session_switch` and on `off→on` toggle (not on every `turn_start`). The resulting systemPrompt is included in every subsequent parent Provider request; target ≤60 tokens per parent Provider request. For T parent Provider requests worst-case added input ≤60×T absent provider prompt-cache discount; actual billed/cache behavior is SOURCE GAP.
+- **D-08 deterministic handoff (AC-A18)**: registered public `before_agent_start` handler deterministically returns exactly the bounded WEConverge policy block when enabled; same generation reuses identical content/fingerprint; disabled returns no policy; token count ≤60; no Provider call/readback required. Downstream OMP assembly of the final Provider payload is OMP's official hook contract and outside WEConverge responsibility (AC-L02 RETIRED, never PASS).
 
 ### 4.2 Observer (`tool_call` / `tool_result` / `task:subagent:*` subscribers)
 
 - Subscribes via `pi.on("tool_call")`, `pi.on("tool_result")`, and `pi.events.on("task:subagent:lifecycle" | "progress" | "event")`.
-- All handlers are synchronous observation, never blocking. They record:
   - `tool_call`: requested `task` arguments as observed (requested fact).
   - `tool_result`: native Task result `details` including `SingleResult[]` as observed.
   - `task:subagent:lifecycle`: child id, agent, parentToolCallId, sessionFile, status.
@@ -416,29 +414,29 @@ The parent model's input + output + reasoning tokens are the primary cost. Child
 
 ### 12.1 Three evidence layers — separated, never mixed
 
-1. **Mechanical (deterministic).** `src/core/*` pure functions under fake `ExtensionAPI`: lifecycle phase transitions, generation scoping, `weconverge_decide` narrow gating (version == 1, parent-effort preconditions), fact taxonomy labeling, audit sanitization/truncation, off/detached semantics, observer fail-open. Evidence form: typecheck, fixture, and bounded in-process tests. Never claims live OMP.
+1. **Mechanical (deterministic).** `src/core/*` pure functions under fake `ExtensionAPI`: lifecycle phase transitions, generation scoping, `weconverge_decide` narrow gating (version == 1, parent-effort preconditions), fact taxonomy labeling, audit sanitization/truncation, off/detached semantics, observer fail-open, **and AC-A18 deterministic official-hook handoff** (enabled returns exactly bounded policy block, same generation reuses identical content/fingerprint, disabled returns no policy, ≤60 tokens, no Provider call/readback). Evidence form: typecheck, fixture, and bounded in-process tests. Never claims live OMP Provider payload.
 
-2. **Live OMP (observed).** Real junction load, command sequence, `before_agent_start` injection observed at generation start, `tool_call` / `tool_result` / `task:subagent:*` observed where emitted, child `resolvedModel` where progress provides it, `restoreState` readback where `setThinkingLevel` succeeds. Evidence form: terminal/log with exact tool_call previews, `actualModel`/`actualEffort` readback where public, and explicit SOURCE_GAP where unavailable. `priceTelemetry: SOURCE GAP` is the only honest price claim.
+2. **Live OMP (observed).** Real junction load, command sequence, **`AC-A18 deterministic handoff`** (already covered mechanical, not live), `tool_call` / `tool_result` / `task:subagent:*` observed where emitted, child `resolvedModel` where progress provides it, `restoreState` readback where `setThinkingLevel` succeeds. **AC-L02 final Provider payload readback is RETIRED per D-08 and never a live gate; downstream OMP assembly is OMP's official `before_agent_start.systemPrompt` hook contract, outside WEConverge responsibility. Its absence is not a product SOURCE GAP.** Evidence form: terminal/log with exact tool_call previews, `actualModel`/`actualEffort` readback where public, and explicit SOURCE_GAP where unavailable (excluding AC-L02). `priceTelemetry: SOURCE GAP` is the only honest price claim.
 
 3. **Cost (token economics).** Generation-scoped policy token count, parent synthesis cost per exploration batch, child output length as observed. Evidence form: measured turn transcripts, not a synthetic provider-call counter claim. No claim of "zero extra Provider calls" via synthetic preflight; that claim requires a public preflight result that does not exist.
 
 ### 12.2 Retire, do not fake
 
-Old `ACCEPTANCE.md` / `SPEC` items that require enforcement (blocking, mutation, cancellation, automatic dispatch, pre-provider non-Max proof, enforced concurrency/wave/duplicate/compact-output) are retired for this reduced design rather than faked PASS. Retirement mapping is in Section 13.
+Old `ACCEPTANCE.md` / `SPEC` items that require enforcement (blocking, mutation, cancellation, automatic dispatch, pre-provider non-Max proof, enforced concurrency/wave/duplicate/compact-output) **and the self-contradictory Provider payload-readback clause (AC-L02)** are retired for this reduced design rather than faked PASS. Retirement mapping is in Section 13.
 
 Acceptance is `COMPLETE` only when:
 
-- Mechanical fixtures pass for the advisory contract as written, and
-- Live OMP evidence demonstrates observation (not enforcement) for the direct `task` path, and
+- Mechanical fixtures pass for the advisory contract as written (**including AC-A18**), and
+- Live OMP evidence demonstrates observation (not enforcement) for the direct `task` path **(AC-L01/L03/L04/L05; AC-L02 excluded as RETIRED)**, and
 - Cost evidence demonstrates bounded policy and single-batch native task handling, and
-- No retired AC is presented as PASS.
+- No retired AC (including AC-L02) is presented as PASS.
 
 ### 12.3 Honest audit gates
 
 - `requested` vs `expected` vs `observed` vs `inferred` vs `source_gap` separation is verified by fixture: presenting `expected` as `observed` fails the fixture.
 - `relativeCostTier` presented as `resolvedEffort` fails the fixture.
 - Observer-thrown fixture must show `health: degraded` and OMP task still completes (fail-open).
-
+- AC-A18 handler returns exactly `POLICY_BLOCK` with fingerprint stability, not a behavior canary (model may ignore policy nondeterministically).
 ---
 
 ## 13. Contract Migration Impact
@@ -454,7 +452,7 @@ Acceptance is `COMPLETE` only when:
 | D-05 | SPEC §6.1 CP-001 / CAP-001: Automatic external exploration is dispatchable by the Extension. | **Retired as dispatchable; retained as observed.** Exploration is dispatchable only by the parent model natively; the Extension observes. | Verified BLOCKED for Extension dispatch (audit POC `taskWrapperInvocations: 0` before valid `weconverge_decide` BLOCKED). |
 | D-06 | Runtime: "one Extension runtime per parent session with child tracking via parent-child link". | **Amended to:** one active full runtime plus bounded minimal detached tombstones; successful switch destroys old full runtime; no public session-delete event. | No public parent↔child session registry readback or delete event is available via ExtensionAPI; tombstones are the honest bounded record. |
 | D-07 | SPEC §22 / ACCEPTANCE.md AC-105/AC-107/AC-108 ladder completeness. | **Retired as PASS gates.** Moved to `Retired / not applicable under pure advisory` in acceptance design (Section 12). Mechanical/live/cost separation replaces the ladder-PASS check. | Retiring incompatible ACs is honest per Section 12; faking PASS is prohibited. |
-
+| D-08 | AC-L02 final Provider payload readback (enabled 首个 generation 的 `before_agent_start` systemPrompt 必须在最终 Provider payload 中可回读, ≤60 tokens) + downstream OMP assembly | **RETIRED (never PASS).** Provider-wire payload introspection is not an Extension responsibility. Downstream OMP assembly is OMP's official `before_agent_start.systemPrompt` hook contract and outside WEConverge responsibility. Replaced by **AC-A18 deterministic official-hook handoff**: enabled handler deterministically returns exactly bounded WEConverge policy block; same generation reuses identical content/fingerprint; disabled returns no policy; token ≤60; no Provider call/readback required. Behavior canary (model actually emitting `task`) is nondeterministic and not proof. | Public OMP API remains authoritative; no OMP core/WeOMP/user config/credential change. The impossible readback clause is RETIRED explicitly rather than marked PASS; public hook handoff is the honest boundary. |
 ### 13.2 Clauses that remain in force
 
 - Boundary: no second scheduler, no junction-scraping, no credential handling, no persistent global effort write, no second child bus — RETAINED.
@@ -471,22 +469,20 @@ Acceptance is `COMPLETE` only when:
 
 ---
 
-## 14. Source Gaps (Remaining and Unchanged)
+## 14. Source Gaps (Remaining — D-08 clarification: Provider payload assembly not product gap)
 
-These are not to be retrofit via undocumented file reads or synthetic preflight:
+These are not to be retrofit via undocumented file reads or synthetic preflight. **D-08 clarification:** the final Provider payload assembly from `before_agent_start.systemPrompt` is OMP's official hook contract and outside WEConverge responsibility; its per-request wire presentation is **not** a product SOURCE GAP and AC-L02 is RETIRED (see §13.1 D-08). The gaps below are the remaining honest gaps:
 
 | Gap | Why it stays SOURCE_GAP |
 |---|---|
 | Effective `task` preflight (`{effectiveModel, concreteThinkingLevel, wouldBeMax}` before a Provider call, with authFallback and ceiling) | Internal to `task/executor.ts:2820-2894`; no public Extension surface exposes it. Mitigation under pure advisory is honest post-call observation, not a synthetic allow-list gate. |
 | Per-child `resolvedEffort` | No dedicated public effort field in `task:subagent:lifecycle` or `SingleResult`; progress carries `modelRole`/`resolvedModel` only. Suffix parsing is not a stable contract. |
-| Provider / payload provenance per wire request | `before_provider_request.payload: unknown`, provider-specific `onPayload` semantics (OpenAI Completions ignores return); not a universal Max gate. |
 | Provider price / billing / quota / balance telemetry | No public price or quota readback; `priceTelemetry: SOURCE GAP` is the only honest claim. Advisory uses `relativeCostTier` with explicit disclaimer. |
 | General parent↔child session registry readback | No traversible `parentSessionId → childSessionIds` public API from parent Extension; `parentToolCallId` / session file observed where present, but not a registry. |
 | Child Extension event forwarding | Child `tool_call` / `tool_result` / Provider hooks run on a fresh `EventBus` not forwarded to parent; parent sees only `task:subagent:*` coarse channels. |
 | Cross-profile persisted replay | `appendEntry` replay depends on `sessionManager.getBranch()`; `--no-session` intentionally yields no persistence. Not inferred from fresh load. |
 | Public session-delete event | No delete notification for tombstone GC; bounded retention is used instead. |
 | Compact child output guarantee | Child output length is controlled by OMP and the child model; policy advice cannot enforce truncation. |
-
 ---
 
 ## 15. Resolved Adversarial Findings

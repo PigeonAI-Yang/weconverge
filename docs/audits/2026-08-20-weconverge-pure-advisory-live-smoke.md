@@ -6,6 +6,16 @@
 
 ---
 
+> **⚠ D-08 POSTSCRIPT — CURRENT-STATUS CORRECTION (2026-08-20, Owner-directed, supersedes any pre-D-08 AC-L02 reading of this file):**
+> This report is a **historical live observation record** of what was seen on 2026-08-20 (E-L01..E-L08). Its raw evidence chronology (junction, TUI log cursor 0→239500, tool sequence, status JSON) is **preserved intact** and remains an accurate record of what was observed before D-08.
+> **Current product status correction:** Per PRD §0.2/D-08, SPEC §0.2–§0.3/D-08, TECHNICAL_DESIGN §0.2/D-08 and `docs/spark/2026-08-20-weconverge-pure-advisory-design.md §4.1/§13`, the pre-D-08 **AC-L02 “final Provider payload readback” SOURCE GAP is RETIRED (never PASS, not a product SOURCE GAP)**. Provider-wire payload introspection is not an Extension responsibility; downstream OMP assembly of `before_agent_start.systemPrompt` is OMP's official hook contract and outside WEConverge responsibility.
+> **Replacement:** **AC-A18 deterministic official-hook handoff** (enabled handler deterministically returns exact bounded POLICY_BLOCK, same-generation fingerprint reuse, disabled returns no policy, ≤60 tokens, no Provider readback) is **PASS** via `node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/extension.integration.test.ts` → **110 passed, 0 failed**.
+> **Active T14 gates after D-08:** AC-L01 PASS, AC-L03 PASS (with subfield SOURCE GAP), AC-L04 NOT OBSERVED (PARTIAL), AC-L05 SOURCE GAP, AC-C01 PASS, AC-C02 PASS, AC-C03 NOT OBSERVED — **AC-L02 RETIRED, excluded from blocker count (3 active gaps remain).** See `ACCEPTANCE_ADVISORY.md` §0/§4/§8/§10 (D-08).
+> **Do not mistake the historical E-L04 AC-L02 SOURCE GAP line in this file for current product status.**
+
+---
+
+
 ## 0. Environment
 
 - Date: 2026-08-20 (PigeonYang local, UTC+08)
@@ -124,7 +134,7 @@ Record requested vs expected vs observed vs inferred vs source_gap; never presen
 - Direct `systemPrompt` content in the next parent Provider request: **SOURCE GAP** via public surface. No public Extension API exposes the assembled Provider payload (`before_provider_request.payload: unknown`). Verified by `CAPABILITY_PROBE.md` and pure-advisory design §13 (no synthesized preflight).
 - Token budget: `33 ≤ 60` deterministic via `test/mechanical.test.ts`; not re-measured live to avoid extra Provider cost.
 
-**Verdict for E-L04:** Generation existence and enabled phase observed; policy string length/boundedness verified via source+mechanical; live per-request systemPrompt content remains SOURCE GAP (honest separation).
+**Verdict for E-L04 (historical observation; CURRENT per D-08: AC-L02 RETIRED):** Generation existence and enabled phase observed; policy string length/boundedness verified via source+mechanical; live per-request systemPrompt content was recorded as SOURCE GAP at observation time. **Per D-08, this SOURCE GAP is now RETIRED and not a product SOURCE GAP; replacement AC-A18 deterministic official-hook handoff is PASS (110/110).**
 
 ---
 
@@ -274,7 +284,7 @@ WEConverge status: {"enabled":false,"phase":"disabled","generation":1,"baselineM
 
 | AC | Verdict | Exact evidence and reason (requested/expected/observed/inferred/source_gap separated) |
 | **AC-L01** (install & load) | **PASS** | Junction `J:\OhMyPi\data\.omp\agent\extensions\weconverge` → `J:\PigeonYang\tools\weconverge` (E-L01) + `omp/17.4.0` with `Muse Spark 1.2 Contributor` discovered via junction (E-L02) + `/weconverge status` executed with no `Extension load error` (E-L03). Source inventory is single `index.ts` re-exporting `src/extension.ts`. |
-| **AC-L02** (strategy injection, generation-scoped) | **SOURCE GAP** | Generation 1 enabled (`enabled:true`, `phase:baseline`) observed (E-L03.3). `POLICY_BLOCK` is 33 tokens ≤60 deterministic (E-L04). Per-request `systemPrompt` content in Provider payload is not exposed via any public Extension API (no `before_provider_request` dump, no Provider response metadata). Honest status shows policy effect indirectly via subsequent `task` batch (E-L05) but direct `systemPrompt` readback is **SOURCE GAP** — not synthesized. |
+| **AC-L02** (strategy injection, generation-scoped) | **SOURCE GAP — historical record; CURRENT: RETIRED per D-08 (see postscript)** | Generation 1 enabled (`enabled:true`, `phase:baseline`) observed (E-L03.3). `POLICY_BLOCK` is 33 tokens ≤60 deterministic (E-L04). Per-request `systemPrompt` content in Provider payload is not exposed via any public Extension API (no `before_provider_request` dump, no Provider response metadata). Honest status shows policy effect indirectly via subsequent `task` batch (E-L05) but direct `systemPrompt` readback was recorded as **SOURCE GAP** at observation time. **D-08 supersession: AC-L02 is now RETIRED (never PASS, not a product SOURCE GAP); replacement AC-A18 deterministic hand-off is PASS (110/110).** |
 | **AC-L03** (observation channel: tool_call/tool_result/task:subagent:*) | **PASS** (with documented source gaps) | Parent emitted one native `task(context="advisory-probe", tasks:[2])` without preceding `weconverge_decide` (E-L05). `tool_call` observed as `Task 2 agents` + `wave:1`; `tool_result` observed as two `SingleResult` settlements (17.5s/23.4s) + `TASK_BATCH_DONE`; `task:subagent:lifecycle` observed as `waiting on 1 job` ticks. `resolvedModel` per child not rendered in this TUI transcript → **SOURCE GAP** for that subfield; `resolvedEffort` is always **SOURCE GAP** (no public field). No `expected`→`observed` promotion. |
 | **AC-L04** (off semantics) | **NOT OBSERVED (PARTIAL)** | `off` command/disabled-phase: **PASS** — after task, `/weconverge off` returned `disabled; restore=not_needed; observed children detached (user children untouched)` and following `status` showed `enabled:false`, `phase:disabled`, `wave:1` retained (E-L07). Running-child non-cancellation: **NOT OBSERVED** — both children were already terminal (`activeChildren=0` before `off`; settlements at 17.5s/23.4s), so no running child existed to prove OMP continuation/not-cancelled. Overall AC-L04 cannot be full PASS; classified as **PARTIAL/NOT OBSERVED**. |
 | **AC-L05** (restore & switch) | **SOURCE GAP** | `off`/`reset`/`end` owned-effort restore honestly reports `restoreState:not_needed` with `actualModel` readback (`muse-spark-1.2-contributor/unknown`) (E-L07). `session_switch` destroying old full runtime not exercised in single-generation `--no-session` smoke; bounded tombstone semantics proven via `wave` retention but switch destruction is **SOURCE GAP** until a real `session_switch` with two generations is run. Public `session-delete` event remains **SOURCE GAP** per design (bounded retention, no delete notification). |
@@ -312,14 +322,14 @@ Never claimed `actualEffort` where not exposed; never synthesized `resolvedEffor
 
 ---
 
-## 5. Strongest Result & What Remains
-**Strongest observed PASS (this minimal smoke):**
+## 5. Strongest Result & What Remains — see D-08 postscript above (AC-L02 RETIRED)
+**Strongest observed PASS (this minimal smoke, historical record + D-08 current correction):**
 
-- **AC-L01, AC-L03, AC-C02** are conclusively PASS with bounded live evidence: installed junction loads with no extension error; parent model directly emits one native `task` batch of 2 without a `weconverge_decide` gate and OMP correctly schedules/assembles results. AC-L04 off command/disabled-phase is PASS but running-child continuation remains **NOT OBSERVED** (overall AC-L04 **PARTIAL/NOT OBSERVED**).
+- **AC-L01, AC-L03, AC-C02** are conclusively PASS with bounded live evidence: installed junction loads with no extension error; parent model directly emits one native `task` batch of 2 without a `weconverge_decide` gate and OMP correctly schedules/assembles results. AC-L04 off command/disabled-phase is PASS but running-child continuation remains **NOT OBSERVED** (overall AC-L04 **PARTIAL/NOT OBSERVED**). **AC-A18 deterministic official-hook handoff is PASS** (`110 passed` via extension integration harness, D-08 replacement for AC-L02).
 
-**Bounded honest gaps (retained per design, not failures):**
+**Bounded honest gaps (retained per design, not failures) — current active view:**
 
-- **AC-L02** policy per-request payload and **AC-L05** `session_switch` destruction are **SOURCE GAP** until a public readback or a two-generation switch is explicitly observed.
+- **AC-L02** per-request Provider payload readback: **RETIRED (never PASS, not a product SOURCE GAP) per D-08** — superseded by AC-A18; historical E-L04 SOURCE GAP line in this file is observation record only, not current product status. **AC-L05** `session_switch` destruction is **SOURCE GAP** until a two-generation switch is explicitly observed.
 - **AC-L03**'s `resolvedModel` per child and **AC-C01**'s billed/cache are **SOURCE GAP** (no public API).
 - **AC-C03** child output length is **NOT OBSERVED** in this run (children failed on yield).
 - **AC-L04** running-child non-cancellation is **NOT OBSERVED** (no running child at `off` time).

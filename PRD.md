@@ -1,12 +1,11 @@
 # WEConverge PRD
 
-- 状态：Advisory contract v1.1.0-advisory — Owner-approved pure advisory (2026-08-20)
+- 状态：Advisory contract v1.1.0-advisory — Owner-approved pure advisory (2026-08-20) + D-08 correction (2026-08-20, Owner-directed)
 - 历史基线：v1.0.0 (2026-08-19) 原文保留于本文第 1–12 章作为历史记录（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），仅通过本文第 0 章与第 13 章以后的咨询层显式覆盖
-- 咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` (Owner-approved 2026-08-20)
+- 咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` (Owner-approved 2026-08-20) + D-08 `before_agent_start` 官方 hook 握手为权威交接（Provider payload 内省非职责）
 - 历史基线：`docs/spark/2026-08-19-weconverge-design.md` (Owner-approved 2026-08-19)
 - 产品：WEConverge (OMP 用户级 Extension, 权威目录 `J:\PigeonYang\tools\weconverge`)
-- 权威顺序：Owner 显式决定 (2026-08-20 D-01..D-07) > 本文咨询层 (§0, §13+) > 历史基线设计 (2026-08-19) > 本文历史层 (§1–12, v1.0.0 原文) > SPEC / TECHNICAL_DESIGN 咨询层
-
+- 权威顺序：Owner 显式决定 (2026-08-20 D-01..D-08) > 本文咨询层 (§0, §13+) > 历史基线设计 (2026-08-19) > 本文历史层 (§1–12, v1.0.0 原文) > SPEC / TECHNICAL_DESIGN 咨询层
 > **实施授权**：本文咨询层已获 Owner 授权作为实现合同；历史层不单独作为实施依据，冲突处以咨询层为准（见 §0.2）。
 
 ---
@@ -17,10 +16,10 @@
 
 1. 本文第 1–12 章为 **v1.0.0 历史原文保留（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写）**，不做静默弱化；其中与咨询层冲突的条款按 §0.2 显式退役为咨询观察，不再作为强制门。
 2. 任何历史 `REQ` 退役必须在 §0.2 逐条列出旧条款、退役形态与证据层替代；未列入 §0.2 的历史条款继续有效。
-3. 咨询层新增需求编号为 `REQ-100` 起（`REQ-100..119`），避免与历史 `REQ-001..083` 碰撞；两者通过 §0.2 映射关联。
-4. 历史 `REQ-001..083 → CAP → AC` 映射保留为历史追溯；咨询层 `REQ-100..119 → CAP-A → AC-A` 为现行可证伪验收依据。旧强制 `AC-001..044` / `AC-101..115` 中因强制执行而不再适用的项按 §0.3 显式列为 `RETIRED (advisory)`，永不按 PASS 呈现。
+3. 咨询层新增需求编号为 `REQ-100` 起（`REQ-100..119`），避免与历史 `REQ-001..083` 碰撞；两者通过 §0.2 映射关联。D-08 新增 **AC-A18** 为确定性官方-hook 握手验收，其映射见 §14 与 SPEC §13.1/§20.2。
+4. 历史 `REQ-001..083 → CAP → AC` 映射保留为历史追溯；咨询层 `REQ-100..119 → CAP-A → AC-A` 为现行可证伪验收依据。旧强制 `AC-001..044` / `AC-101..115` / **`AC-L02`** 中因强制执行或自相矛盾（Provider payload 回读）而不再适用的项按 §0.3 显式列为 `RETIRED (advisory)`，永不按 PASS 呈现。**AC-L02 的最终 Provider payload 回读要求按 D-08 永久 RETIRED，其缺失不记为产品 SOURCE GAP；替代为 AC-A18。**
 
-### 0.2 D-01..D-07 显式覆盖（旧条款 → 咨询层）
+### 0.2 D-01..D-08 显式覆盖（旧条款 → 咨询层）
 
 | 决定 | 历史基线条款 | 咨询层处置 | 现行需求 | 证据层替代 |
 |---|---|---|---|---|
@@ -31,9 +30,9 @@
 | D-05 | SPEC §6.1 CP-001 / CAP-001：Extension 可派发外部探索 | **退役为仅父可派发**；Extension 观察 | REQ-101, REQ-102 | 机械：无 `emitChild` 路径；Live：`tool_result` / `task:subagent:*` 观察 |
 | D-06 | Runtime："每父会话一个 Extension 运行时 + parent-child 链追踪" | **修订为：** 单活 full runtime + 有界 detached tombstones；switch 销毁旧 full runtime；不假设 public session-delete | REQ-109 (runtime/tombstone lifecycle) | 机械：generation 作用域 + tombstone bounded ≤2；Live：switch 后旧 runtime 句柄不再收事件 |
 | D-07 | SPEC §22 / ACCEPTANCE AC-105/107/108 阶梯完整性 PASS 门 | **退役为 RETIRED**；以 §13 机械/真实/成本三层分立验收替代 | REQ-115..117 (acceptance separation) | 机械/真实/成本分层证据（SPEC §13 咨询层） |
+| D-08 | SPEC §13.2 / TECHNICAL_DESIGN §12 / 纯咨询设计 §12 的 AC-L02 最终 Provider payload 回读要求：启用后首个 generation 的 `before_agent_start` systemPrompt 必须在最终 Provider payload 中可回读验证 | **RETIRED (never PASS)**。Provider-wire payload 内省不是 Extension 职责；下游 OMP 组装为 OMP 官方 `before_agent_start.systemPrompt` hook 合同，超出 WEConverge 责任边界。替代为 AC-A18 确定性官方 hook 握手（见下）；AC-L02 永不按 PASS 呈现，其缺失不记为产品 SOURCE GAP | REQ-100 (compact policy injection), CAP-A01 | 确定性：注册的公共 `before_agent_start` handler 在 enabled 时确定性返回精确有界 WEConverge policy 块；同 generation 复用相同 content/fingerprint；disabled 返回无 policy；token ≤60；无需 Provider 调用/回读。Live 观测层不再以 Provider payload 回读为门 |
 
 历史条款凡被 §0.2 列为退役，其对应强制语义（block/mutation/cancel/auto-dispatch/pre-provider Max proof/强制并发·波次·去重·紧凑输出）不再作为实施门；历史文本仍保留供追溯，但验收以咨询层为准。
-
 ### 0.3 旧强制 AC 退役映射（RETIRED — 咨询下不按 PASS 呈现）
 
 | 旧 AC | 历史门 | 咨询层处置 | 现行替代 AC |
@@ -44,7 +43,8 @@
 | AC-013 (子包不含完整父上下文) | 强制校验 | 退役为咨询建议：policy 建议最小上下文，不强制截断 | AC-C03 / AC-A07 |
 | AC-016..018 (effort 阶梯) | 自动阶梯强制 | 保留为父 effort 窄门 (AC-A08..A10)；子/自动 task 阶梯不适用 | AC-A08..A10 |
 | AC-019/AC-108 (pre-provider Max 拒绝) | 调度前证明非 Max | 退役为观察标注：仅 `raise_effort` 保留前置校验 | AC-A11 |
-| AC-105/AC-107/AC-108 (外部探索/专业角色/Max 护栏 live) | 真实派发与 Max 护栏 PASS | 退役为 RETIRED；以 live 观察证据替代强制派发证据 | AC-L02..L03 |
+| AC-105/AC-107/AC-108 (外部探索/专业角色/Max 护栏 live) | 真实派发与 Max 护栏 PASS | 退役为 RETIRED；以 live 观察证据替代强制派发证据 | AC-L03 (保留观察)；AC-105/107 对应强制派发部分 RETIRED |
+| AC-L02 (策略注入最终 Provider payload 回读) | 启用后首个 generation 的 `before_agent_start` systemPrompt 必须在最终 Provider payload 中可回读（≤60 tokens） | **RETIRED (never PASS) per D-08**：Provider-wire payload 内省非 Extension 职责；下游 OMP 组装为 OMP 官方 hook 合同，超出 WEConverge 责任边界；其缺失不记为产品 SOURCE GAP | **AC-A18** (确定性官方 hook 握手 — 见 §13.1) |
 | 其余 AC-001..044 / AC-101..115 | 机械/真实 PASS | 历史保留；咨询层以 AC-A / AC-L / AC-C 重述可证伪门 | 见 SPEC §13 咨询层映射 |
 
 > 原则：**Retired, not faked.** 任何退役 AC 不得在咨询验收中标记 PASS；伪造即为合同违背。
@@ -65,7 +65,7 @@
 
 发生冲突时，上游优先。实现困难、OMP API 缺口或成本压力只能形成阻塞、SOURCE GAP 或显式变更提案，不能静默降低本 PRD 或 SPEC。
 
-> **咨询层补充（2026-08-20, Owner-approved）：** 本文档 §0 与 §13+ 为 Owner 于 2026-08-20 批准的纯咨询覆盖层；与历史层冲突时以咨询层为准。`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` 为咨询层设计权威。
+> **咨询层补充（2026-08-20, Owner-approved）：** 本文档 §0 与 §13+ 为 Owner 于 2026-08-20 批准的纯咨询覆盖层（含 D-08 Provider payload 回读退役与 AC-A18 官方 hook 握手）；与历史层冲突时以咨询层为准。`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` 为咨询层设计权威。公共 OMP API 保持权威，D-08 不涉及 OMP core/WeOMP/用户配置/凭据变更。
 
 ## 2. Owner 核准事实
 
@@ -75,7 +75,7 @@
 
 本次授权仅覆盖产品合同文档，不授权实现、安装、修改 OMP/WeOMP 或改变用户现有模型与 Agent 配置。
 
-> **2026-08-20 补充核准**：Owner 批准纯咨询缩减设计（pure-advisory reduction）并授权将 D-01..D-07 落为可实施咨询合同；实现现已获明确授权（见本文 §0）。
+> **2026-08-20 补充核准**：Owner 批准纯咨询缩减设计（pure-advisory reduction）并授权将 D-01..D-07 落为可实施咨询合同；实现现已获明确授权（见本文 §0）。**2026-08-20 D-08 补充**：Owner 指示移除自相矛盾的 Extension Provider payload 终局回读要求，AC-L02 永久 RETIRED，替换为 AC-A18 确定性官方 hook 握手；公共 OMP API 权威不变，不涉及 OMP core/WeOMP/用户配置/凭据变更。
 
 ## 3. 产品命题
 
@@ -493,7 +493,7 @@ Extension 自身失败不得阻断普通 OMP 任务；必须停止新增自动�
 9. 未修改明确禁区；
 10. Owner 完成最终产品验收。
 
-> **咨询层发布门补充（v1.1-advisory, 替代历史 SPEC §22 强制 ladder 门）：** 除上述门外，咨询层以 SPEC §13 的机械/真实/成本三层分立验收为准；历史 AC-105/107/108 的强制派发门已退役（RETIRED），以观察证据替代。
+> **咨询层发布门补充（v1.1-advisory, 替代历史 SPEC §22 强制 ladder 门）：** 除上述门外，咨询层以 SPEC §13 的机械/真实/成本三层分立验收为准；历史 AC-105/107/108 的强制派发门及 **AC-L02 Provider payload 回读门（D-08 RETIRED）** 已退役，以观察/确定性握手证据替代。T14 修订版 live 门计入 AC-A18、排除 AC-L02。
 
 ## 12. 设计覆盖表
 
@@ -531,7 +531,9 @@ Extension 自身失败不得阻断普通 OMP 任务；必须停止新增自动�
 1. 内容为 English、咨询性、≤60 tokens / parent Provider request；
 2. 含一条 directive + 两条 bullet + 字面量 `task(context, tasks:[≤2])` 引用；
 3. generation-scoped 注入事件（`session_start`/`session_switch` 与 `off→on` 时各一次），但计费按每 parent Provider request 含该 policy 计（最坏 `≤60×T` tokens / T requests，无 prompt-cache 折扣假设；实际计费/缓存为 SOURCE GAP）；
-4. 不产生额外 Provider 调用；模型可忽略该策略，无强制后效。
+4. 不产生额外 Provider 调用；模型可忽略该策略，无强制后效；
+5. **D-08 官方 hook 握手**：注册的公共 `before_agent_start` handler 在 enabled 时确定性返回精确有界 WEConverge policy 块；同 generation 复用相同 content/fingerprint；disabled 返回无 policy；token ≤60；无需 Provider 调用/回读（AC-A18）。
+> **D-08  advisory**：`before_agent_start.systemPrompt` 的下游 OMP 组装与最终 Provider payload 呈现为 OMP 官方 hook 合同，超出 WEConverge 责任边界；Extension 不检验最终 Provider payload，其缺失不记为产品 SOURCE GAP（AC-L02 已 RETIRED）。
 
 #### REQ-101 纯咨询（Pure advisory — no enforcement）
 
@@ -614,13 +616,11 @@ Extension 必须通过公开 `pi.on("tool_call")` / `pi.on("tool_result")` / `pi
 
 父模型 input+output+reasoning 为主成本；子成本次之。常规探索零 Extension 诱发 Provider 调用（父直接批处理原生 `task`）；无轮询；策略文本有界（REQ-100）；子输出紧凑性不作保证，audit 仅对其副本截断。
 
----
-
 ## 14. 咨询层追溯（REQ → 现行 AC 概览）
 
 | 咨询 REQ | 现行 AC (SPEC §13) |
 |---|---|
-| REQ-100 | AC-A01 (policy bounded ≤60 tokens, generation-scoped) |
+| REQ-100 | AC-A01 (policy bounded ≤60 tokens, generation-scoped) + **AC-A18 (deterministic official-hook handoff — D-08)** |
 | REQ-101 | AC-A02 (no wrapper/block/mutation/cancel/auto-dispatch) |
 | REQ-102 | AC-A03..A04 (observation channels) |
 | REQ-103 | AC-A05 (fail-open) |
@@ -636,5 +636,7 @@ Extension 必须通过公开 `pi.on("tool_call")` / `pi.on("tool_result")` / `pi
 | REQ-113 | AC-A17 (config authority) |
 | REQ-114 | AC-A06, AC-A08 (effort evidence) |
 | REQ-115 | AC-C01..C03 (cost) |
+
+> **D-08 映射**：AC-A18 映射至 REQ-100 / CAP-A01，确定性证据为 handler 返回值与 fingerprint 复用；live 门 `AC-L02` 已 RETIRED，不再计入 T14 live 必过门。行为 canary（模型是否实际遵从 policy 探索）不作为验收证据，因模型遵从非确定性。
 
 历史 `REQ-001..083` 的完整机械/真实映射保留于 SPEC §12 咨询层历史表；现行映射以本表与 SPEC §13 为准。
