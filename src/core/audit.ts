@@ -66,6 +66,11 @@ export function buildAuditEvent(args: {
   createdChildIds?: string[];
   resolvedRoutes?: ResolvedRouteV1[];
   stateSnapshot?: SessionStateV1 | null;
+  requested?: { taskPreview?: string | null; agent?: string | null; effort?: string | null } | null;
+  expected?: { role?: string | null; relativeCostTier?: number | null } | null;
+  observed?: { resolvedModel?: string | null; lifecycle?: string | null } | null;
+  inferred?: { relativeCostTierNote?: string | null; maxCapable?: boolean | null } | null;
+  isDetachedTombstone?: boolean;
 }): AuditEventV1 {
   const d = args.decision;
   const event: AuditEventV1 = {
@@ -78,7 +83,7 @@ export function buildAuditEvent(args: {
     eventType: args.eventType,
     action: d?.action ?? null,
     difficultyType: d?.difficultyType ?? null,
-    evidenceSummary: (d?.evidenceRefs ?? []).map((id) => sanitizeText(id)),
+    evidenceSummary: (d?.evidenceRefs ?? []).map((id: string) => sanitizeText(id)),
     expectedNewInformation: d ? sanitizeText(d.expectedNewInformation) : null,
     successCriterion: d ? sanitizeText(d.successCriterion) : null,
     requestedRole: d?.capability ?? null,
@@ -97,6 +102,11 @@ export function buildAuditEvent(args: {
   if (args.effectiveAction !== undefined) event.effectiveAction = args.effectiveAction;
   if (args.createdChildIds !== undefined) event.createdChildIds = args.createdChildIds.map(sanitizeText);
   if (args.resolvedRoutes !== undefined) event.resolvedRoutes = args.resolvedRoutes;
+  if (args.requested !== undefined) event.requested = args.requested;
+  if (args.expected !== undefined) event.expected = args.expected;
+  if (args.observed !== undefined) event.observed = args.observed;
+  if (args.inferred !== undefined) event.inferred = args.inferred;
+  if (args.isDetachedTombstone !== undefined) event.isDetachedTombstone = args.isDetachedTombstone;
   if (args.stateSnapshot !== undefined) event.stateSnapshot = sanitizeValue(args.stateSnapshot) as SessionStateV1 | null;
   return event;
 }
@@ -218,6 +228,11 @@ export function isValidSessionState(s: unknown): s is SessionStateV1 {
     const x = c as Record<string, unknown>;
     return typeof x.childAgentId === "string" && typeof x.generation === "number" && ["running", "terminal", "detached", "stale"].includes(String(x.status));
   };
+  const validTombstone = (t: unknown): boolean => {
+    if (!t || typeof t !== "object") return false;
+    const x = t as Record<string, unknown>;
+    return typeof x.childId === "string" && (x.parentToolCallId === null || typeof x.parentToolCallId === "string") && (x.sessionFile === null || typeof x.sessionFile === "string") && typeof x.status === "string" && (x.resolvedModel === null || typeof x.resolvedModel === "string") && typeof x.preview === "string";
+  };
   return (
     v.schemaVersion === 1 && typeof v.generation === "number" && Number.isInteger(v.generation) && v.generation >= 1 &&
     typeof v.enabledAtStart === "boolean" && phases.includes(String(v.phase)) &&
@@ -226,7 +241,7 @@ export function isValidSessionState(s: unknown): s is SessionStateV1 {
     typeof v.effortOwnedByExtension === "boolean" && (v.lastEffortRaiseAt === null || typeof v.lastEffortRaiseAt === "string") &&
     (v.selectedDirection === null || typeof v.selectedDirection === "string") && Array.isArray(v.alternativeDirectionIds) && v.alternativeDirectionIds.every((x) => typeof x === "string") &&
     Array.isArray(v.evidence) && v.evidence.every(validEvidence) && [0, 1, 2].includes(Number(v.automaticWavesUsed)) && typeof v.explorationWave === "number" &&
-    Array.isArray(v.ownedChildRuns) && v.ownedChildRuns.every(validChild) && (v.manualExplorationGrant === null || typeof v.manualExplorationGrant === "object") &&
+    Array.isArray(v.ownedChildRuns) && v.ownedChildRuns.every(validChild) && (v.detachedTombstones === undefined || (Array.isArray(v.detachedTombstones) && v.detachedTombstones.every(validTombstone))) && (v.manualExplorationGrant === null || typeof v.manualExplorationGrant === "object") &&
     (v.lastDecision === null || typeof v.lastDecision === "object") && routeIntegrity.includes(String(v.routingIntegrity)) && outcomes.includes(String(v.taskOutcome)) &&
     Array.isArray(v.sourceGaps) && v.sourceGaps.every((x) => typeof x === "string") && (v.blockedReason === null || typeof v.blockedReason === "string") &&
     ["not_needed", "pending", "restored", "failed"].includes(String(v.restoreState)) && ["ok", "degraded"].includes(String(v.health))

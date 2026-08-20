@@ -1,25 +1,7 @@
 /**
- * WEConverge v1 — OMP user-level Extension wiring.
- *
- * This module is the ONLY place that touches the live OMP runtime. All OMP access is
- * inside the default-export closure so `pi` is always in scope (2026-08-20 P0 fix:
- * module-level helpers previously referenced a bare `pi` and every command/tool path
- * crashed with "pi is not defined" under real OMP).
- *
- * It imports the core engine (`src/core`) for all policy logic and implements
- * `OmpAdapters` against the PUBLIC, documented Extension API. It never reads or writes
- * OMP core config, the user's `config.yml`, model/provider credentials, or any other
- * extension's state (the "禁区" is untouched — only `pi.appendEntry` under our own
- * customTypes plus our own versioned settings file are written).
- *
- * Honest runtime limits (CAPABILITY_PROBE.md, CP-003/CP-004):
- *  - `preflightEffort` returns "unavailable": the public API cannot prove a route will
- *    NOT resolve to Max before the call, so automatic child dispatch stays BLOCKED
- *    (zero provider calls) rather than risk the Max cost trap.
- *  - `readbackChildRoute` is omitted: a child's actual route is not exposed to the
- *    parent extension, so child routes report SOURCE GAP, never a false "confirmed".
- *  - `emitChild` is omitted: `ExtensionContext` (tool/event scope) has no `newSession`,
- *    so WEConverge never spawns background children on its own.
+ * WEConverge v1 — pure advisory Extension wiring.
+ * One active full runtime per sessionId#generation + bounded detached tombstones.
+ * Observation only: no blocking, no dispatch. Native task remains untouched.
  */
 import type {
   AfterProviderResponseEvent,
@@ -48,12 +30,15 @@ import {
   buildAuditEvent,
   isValidAuditEvent,
   makeEventId,
-  automaticActionBlockReason,
   sanitizeValue,
   persistAudit as safeAuditWrite,
   hashPayload,
   DecisionRegistry,
   USAGE_TEXT,
+  POLICY_BLOCK,
+  addDetachedTombstone,
+  recordObservedTaskCall,
+  recordObservedTaskResult,
 } from "./core";
 import type {
   AuditEventV1,
@@ -71,25 +56,8 @@ import { dirname, join } from "node:path";
 
 const STATE_ENTRY = "weconverge_state";
 const AUDIT_ENTRY = "weconverge_audit";
-const PROVIDER_ENTRY = "weconverge_provider_response";
 const SETTINGS_FILE = "settings.json";
 
-/** SPEC §8 policy block, injected once per task via before_agent_start. No LLM call. */
-const POLICY_BLOCK = [
-  "[WEConverge scheduling policy — active]",
-  "Default path: current main model, Medium effort, single agent. No pre-classification.",
-  "Non-trivial task: within THIS reasoning pass compare at least two essentially different",
-  "directions (different key assumption / evidence source / verification), execute only the",
-  "best one, and record the selected + backup direction ids via weconverge_decide.",
-  "Simple, closed, once-verifiable tasks may execute directly.",
-  "Escalate ONLY with anchored evidence of non-convergence, using weconverge_decide with:",
-  "obstacle, evidenceRefs (readable, confirmed), expectedNewInformation, successCriterion.",
-  "Never allocate token counts or provider/model ids. Never request max effort.",
-  "Missing facts (permissions/files/logs/external state/price telemetry) => report_source_gap.",
-  "Full hidden reasoning stays out of audit; submit only short decision summaries.",
-].join("\n");
-
-/** Map an OMP thinking level to the SPEC effort enum; unmapped levels are "unknown". */
 function mapThinkingLevel(level: ThinkingLevel | undefined): Effort {
   switch (level) {
     case "medium":
@@ -102,14 +70,12 @@ function mapThinkingLevel(level: ThinkingLevel | undefined): Effort {
   }
 }
 
-/** Raw tool params: runtime shape is enforced by the zod schema; the core revalidates fail-closed. */
 interface DecideToolParams {
   decision: ConvergenceDecisionV1;
   evidences?: EvidenceRefV1[];
 }
 
 export default function weconvergeExtension(pi: ExtensionAPI): void {
-  // ---- session-local runtime state ----
   let state: SessionStateV1 = createInitialState({
     sessionId: "unstarted",
     enabledAtStart: false,
@@ -122,24 +88,11 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
   let policyInjectedForGeneration = 0;
   let settingsDir: string | null = null;
 
-  // ---- persistence helpers (fail-closed, never crash OMP: REQ-070/AC-031) ----
-
   function markDegraded(reason: string): void {
     state = { ...state, health: "degraded" };
     pi.logger.warn(`WEConverge degraded: ${reason}`);
   }
 
-  /**
-   * Extension-own versioned settings directory. Anchored to the formal session-dir
-   * API (never a hardcoded absolute path, never OMP core config): our own namespace
-   * sibling of the sessions directory (SPEC §5.1 allows an Extension-owned versioned
-   * atomic file).
-   *
-   * Safety: only the formal `<data>/agent/sessions/<slug>` layout yields a settings
-   * dir. Ephemeral (--no-session) or non-standard layouts return null => enabled
-   * persistence is unavailable this session (degraded, in-memory only) and NOTHING
-   * is ever written into the project/repo tree.
-   */
   function ensureSettingsDir(ctx: ExtensionContext): string | null {
     if (settingsDir) return settingsDir;
     try {
@@ -151,7 +104,7 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
       const dir = join(agentDir, "weconverge");
       const dirNorm = dir.replace(/[\\/]+$/, "").toLowerCase();
       if (cwd.length > 0 && (dirNorm === cwd || dirNorm.startsWith(cwd + "\\") || dirNorm.startsWith(cwd + "/"))) {
-        return null; // would live inside the working tree — refuse
+        return null;
       }
       mkdirSync(dir, { recursive: true });
       settingsDir = dir;
@@ -169,7 +122,7 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
       if (raw.schemaVersion !== 1 || typeof raw.enabled !== "boolean") return null;
       return raw.enabled;
     } catch {
-      return null; // missing/corrupt => default off
+      return null;
     }
   }
 
@@ -234,8 +187,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     if (!r.ok) markDegraded("audit appendEntry failed");
   }
 
-  // ---- actual readback (CP-005/CP-006, public API only) ----
-
   function readbackActual(ctx: ExtensionContext): { model: string | null; effort: Effort } | null {
     try {
       const model = ctx.models.current()?.id ?? ctx.model?.id ?? null;
@@ -251,10 +202,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     return readbackActual(ctx) ?? { model: null, effort: "unknown" };
   }
 
-  /**
-   * REAL restore (never memory-only): plan -> setThinkingLevel -> readback -> confirm.
-   * Idempotent: once ownership is released, subsequent calls are no-ops.
-   */
   function realRestore(ctx: ExtensionContext, why: string): void {
     const plan = planRestore(state);
     if (!plan.needed) return;
@@ -273,8 +220,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     persistEvent(makeWiringAuditEvent("restore", restoreIntegrity, { restoreResult: state.restoreState }));
     if (state.restoreState === "failed") markDegraded(`restore failed (${why})`);
   }
-
-  // ---- session resume: replay persisted state+audit, reconcile with OMP actual ----
 
   function restoreFromBranch(ctx: ExtensionContext): boolean {
     let hasHistory = true;
@@ -323,15 +268,10 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     }
   }
 
-  // ---- real OMP adapter implementation (public API only) ----
-
   function makeAdapters(ctx: ExtensionContext): OmpAdapters {
     return {
       resolveRole: (capability: string) => config.capabilities[capability] ?? null,
-      // CP-003: public API cannot preflight resolved effort => BLOCKED, zero calls.
-      preflightEffort: (_role: string) => "unavailable" as const,
       readbackActual: () => readbackActual(ctx),
-      // CP-004(child): no per-child route readback on the public API => omitted (SOURCE GAP).
       setSessionEffort: (effort: Effort) => {
         if (effort === "unknown" || effort === "max") return false;
         try {
@@ -342,7 +282,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
         }
       },
       providerCallCount: () => providerCalls,
-      // emitChild omitted on purpose: ExtensionContext has no newSession (CP-001 tool scope).
     };
   }
 
@@ -350,21 +289,18 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     const baseline = baselineFromActual(ctx);
     const fresh = createInitialState({ sessionId, enabledAtStart: enabled, baseline });
     if (enabled && baseline.effort !== "unknown" && baseline.effort !== "medium") {
-      // REQ-020: report the deviation, never rewrite persistent config.
       return { ...fresh, sourceGaps: [`baseline effort is ${pi.getThinkingLevel() ?? "unknown"} (target medium)`] };
     }
     return fresh;
   }
 
-  // ---- tool: single decision entry (SPEC §9.0) ----
-
+  // ---- tool: narrowed decide (raise_effort / source_gap / blocked / continue) ----
   const zodWithNumber = pi.zod as typeof pi.zod & { number(): ReturnType<typeof pi.zod.string> };
   pi.registerTool<DecideToolParams>({
     name: "weconverge_decide",
     label: "WEConverge Decide",
     description:
-      "Submit a convergence decision (continue / raise effort / explore / invoke specialist / report source_gap / report blocked). " +
-      "WEConverge validates evidence, cost guards and the Max ban, then returns the decided action + resolved route.",
+      "Pure-advisory decision for parent effort or formal gap. Allowed: raise_effort, report_source_gap, report_blocked, continue_current. Retired dispatch actions use native task directly.",
     parameters: pi.zod.object({
       decision: pi.zod
         .object({
@@ -461,8 +397,7 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     },
   });
 
-  // ---- command: weconverge on|off|status|reset ----
-
+  // ---- commands: on|off|status|reset (advisory) ----
   pi.registerCommand("weconverge", {
     description: "WEConverge scheduling policy: on | off | status | reset",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
@@ -476,16 +411,14 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
           if (!persistEnabled(ctx, true)) markDegraded("enabled persistence failed");
           config = { ...config, enabled: true };
           if (ctx.isIdle()) {
-            // Idle: safe to establish a fresh baseline for the next task immediately.
             state = newTaskState(ctx, true);
             persistState();
             persistEvent(makeWiringAuditEvent("command_on", "confirmed"));
             ctx.ui.notify(
-              `WEConverge: enabled. baseline model=${state.baselineModel ?? "unknown"} effort=${state.baselineEffort} (Max ban active).`,
+              `WEConverge: enabled. baseline model=${state.baselineModel ?? "unknown"} effort=${state.baselineEffort} (advisory).`,
               "info",
             );
           } else {
-            // REQ-010: never take over a running task mid-flight; applies to next tasks.
             persistEvent(makeWiringAuditEvent("command_on", "confirmed"));
             ctx.ui.notify("WEConverge: enabled for subsequent tasks (current task not taken over).", "info");
           }
@@ -501,7 +434,7 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
           persistState();
           persistEvent(makeWiringAuditEvent("command_off", state.health === "ok" ? "confirmed" : "degraded", { restoreResult: state.restoreState }));
           ctx.ui.notify(
-            `WEConverge: disabled; restore=${state.restoreState}; WEConverge children detached (user children untouched).`,
+            `WEConverge: disabled; restore=${state.restoreState}; observed children detached (user children untouched).`,
             "info",
           );
           break;
@@ -517,7 +450,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
           break;
         }
         case "status": {
-          // Strictly read-only: NO appendEntry, NO state transition (AC-028).
           const view = renderStatus(state, config, readbackActual(ctx));
           ctx.ui.notify(`WEConverge status: ${JSON.stringify(view)}`, "info");
           break;
@@ -529,7 +461,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
   });
 
   // ---- lifecycle wiring (formal events only) ----
-
   pi.on("session_start", (_event, ctx) => {
     try {
       sessionId = ctx.sessionManager.getSessionId();
@@ -540,7 +471,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
         const enabled = config.enabled;
         const hadPriorTask = state.generation > 1 || state.enabledAtStart || state.phase !== "disabled";
         if (hadPriorTask) {
-          // New task: generation++, no inheritance of evidence/waves/children (REQ-011).
           const next = newGeneration(state, baselineFromActual(ctx));
           state = { ...next, enabledAtStart: enabled, phase: enabled ? "baseline" : "disabled" };
         } else {
@@ -555,24 +485,168 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
 
   pi.on("before_agent_start", (event, ctx) => {
     try {
-      // External ownership detection at a formal readback boundary (CP-007/REQ-013).
       const actual = readbackActual(ctx);
       if (actual && detectExternalOwnershipChange(state, actual)) {
         state = relinquishOwnership(state, actual);
         persistEvent(makeWiringAuditEvent("ownership_lost", "degraded"));
         persistState();
       }
-      if (automaticActionBlockReason(state)) return undefined;
       if (!state.enabledAtStart || state.phase === "disabled") return undefined;
       if (policyInjectedForGeneration === state.generation) return undefined;
       policyInjectedForGeneration = state.generation;
       return { systemPrompt: [...event.systemPrompt, POLICY_BLOCK] };
     } catch (e) {
-      // AC-041: injection failure degrades WEConverge; ordinary OMP continues.
       markDegraded(`policy injection failed: ${e instanceof Error ? e.message : String(e)}`);
       return undefined;
     }
   });
+
+  // Observation-only handlers — fail-open, ≤5ms, no await, no I/O
+  const tryObserve = (label: string, fn: () => void): void => {
+    try {
+      fn();
+    } catch (e) {
+      markDegraded(`observer:${label}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  // Generic observation of public tool_call / tool_result / task:subagent:* if available.
+  // Use typed as unknown to remain compatible if OMP does not expose these events.
+  const maybeOn = pi as unknown as {
+    on?: (event: string, handler: (ev: unknown, ctx: ExtensionContext) => unknown) => void;
+    events?: { on?: (event: string, handler: (ev: unknown) => void) => void };
+  };
+
+  if (typeof maybeOn.on === "function") {
+    try {
+      // tool_call observation — requested fact
+      (pi as unknown as { on: (e: string, h: (ev: unknown, ctx: ExtensionContext) => void) => void }).on("tool_call", (ev: unknown, _ctx: ExtensionContext) => {
+        tryObserve("tool_call", () => {
+          const e = ev as Record<string, unknown>;
+          if (e.toolName !== "task" && e.name !== "task") return;
+          const input = (e.input ?? e.args ?? e.params) as unknown;
+          const rec = input && typeof input === "object" ? (input as Record<string, unknown>) : null;
+          const taskPreview = rec && typeof rec["task"] === "string" ? String(rec["task"]).slice(0, 200) : rec && typeof rec["context"] === "string" ? String(rec["context"]).slice(0, 200) : "";
+          const agent = rec && typeof rec["agent"] === "string" ? String(rec["agent"]) : null;
+          const effort = rec && typeof rec["effort"] === "string" ? String(rec["effort"]) : null;
+          // expected role (inferred from config) — advisory
+          const capability = null; // task call itself does not carry capability; advisory maps via agent if needed
+          void capability;
+          // record observed wave
+          const childId = typeof e["toolCallId"] === "string" ? String(e["toolCallId"]) : `task-${Date.now()}`;
+          state = recordObservedTaskCall(state, { childId, generation: state.generation });
+          // audit taxonomy fragment is persisted as a lightweight advisory event (truncated)
+          const requestedPreview = taskPreview;
+          void agent; void effort;
+          persistEvent(
+            buildAuditEvent({
+              eventId: makeEventId(new Date().toISOString()),
+              timestamp: new Date().toISOString(),
+              sessionId,
+              generation: state.generation,
+              parentAgentId: null,
+              eventType: "tool_call_observed",
+              decision: null,
+              resolvedRoute: null,
+              relativeCostTier: null,
+              costComparison: null,
+              result: "partial",
+              sourceGaps: state.sourceGaps,
+              restoreResult: null,
+              stateSnapshot: state,
+              requested: { taskPreview: requestedPreview, agent, effort },
+            } as unknown as Parameters<typeof buildAuditEvent>[0]),
+          );
+        });
+      });
+    } catch {
+      // fail-open: observation not available
+    }
+    try {
+      (pi as unknown as { on: (e: string, h: (ev: unknown, ctx: ExtensionContext) => void) => void }).on("tool_result", (ev: unknown, _ctx: ExtensionContext) => {
+        tryObserve("tool_result", () => {
+          const e = ev as Record<string, unknown>;
+          if (e.toolName !== "task" && e.name !== "task") return;
+          const toolCallId = typeof e["toolCallId"] === "string" ? String(e["toolCallId"]) : null;
+          if (toolCallId) state = recordObservedTaskResult(state, toolCallId);
+          // late result handling: if generation changed, add tombstone instead
+          const details = e["details"] as unknown;
+          const preview = JSON.stringify(details ?? e["result"] ?? "").slice(0, 200);
+          // If child was from prior generation, it becomes tombstone
+          const isStale = toolCallId ? !state.ownedChildRuns.some((c) => c.childAgentId === toolCallId) : false;
+          if (isStale) {
+            state = addDetachedTombstone(state, {
+              childId: toolCallId ?? `tomb-${Date.now()}`,
+              parentToolCallId: toolCallId,
+              sessionFile: null,
+              status: "completed",
+              resolvedModel: null,
+              preview,
+            });
+          }
+          persistEvent(
+            buildAuditEvent({
+              eventId: makeEventId(new Date().toISOString()),
+              timestamp: new Date().toISOString(),
+              sessionId,
+              generation: state.generation,
+              parentAgentId: null,
+              eventType: "tool_result_observed",
+              decision: null,
+              resolvedRoute: null,
+              relativeCostTier: null,
+              costComparison: null,
+              result: "partial",
+              sourceGaps: state.sourceGaps,
+              restoreResult: null,
+              stateSnapshot: state,
+            } as unknown as Parameters<typeof buildAuditEvent>[0]),
+          );
+        });
+      });
+    } catch {
+      // fail-open
+    }
+  }
+
+  if (maybeOn.events && typeof maybeOn.events.on === "function") {
+    for (const evName of ["task:subagent:lifecycle", "task:subagent:progress", "task:subagent:event"]) {
+      try {
+        maybeOn.events.on(evName, (ev: unknown) => {
+          tryObserve(evName, () => {
+            const e = ev as Record<string, unknown>;
+            const childId = typeof e["childId"] === "string" ? String(e["childId"]) : typeof e["agentId"] === "string" ? String(e["agentId"]) : null;
+            const resolvedModel = typeof e["resolvedModel"] === "string" ? String(e["resolvedModel"]) : null;
+            if (childId && resolvedModel) {
+              // advisory annotation: observedMax
+              void resolvedModel;
+            }
+            persistEvent(
+              buildAuditEvent({
+                eventId: makeEventId(new Date().toISOString()),
+                timestamp: new Date().toISOString(),
+                sessionId,
+                generation: state.generation,
+                parentAgentId: null,
+                eventType: evName.split(":").join("_") + "_observed",
+                decision: null,
+                resolvedRoute: null,
+                relativeCostTier: null,
+                costComparison: null,
+                result: "partial",
+                sourceGaps: state.sourceGaps,
+                restoreResult: null,
+                stateSnapshot: state,
+                observed: { resolvedModel },
+              } as unknown as Parameters<typeof buildAuditEvent>[0]),
+            );
+          });
+        });
+      } catch {
+        // fail-open
+      }
+    }
+  }
 
   pi.on("session_before_switch", (_event, ctx) => {
     try {
@@ -610,7 +684,7 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_end", (event, ctx) => {
-    if (event.willContinue) return; // not a user-visible terminal settle
+    if (event.willContinue) return;
     terminalRestore("agent_end", ctx);
   });
 
@@ -623,12 +697,9 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     }
   });
 
-  // ---- after_provider_response: instrumentation + sanitized audit, zero routing ----
-
   pi.on("after_provider_response", (_event: AfterProviderResponseEvent) => {
     providerCalls += 1;
     if (!state.enabledAtStart) return;
-    // Sanitize BEFORE persistence: credentials/keys never land in audit (AC-030).
     const providerEvent = makeWiringAuditEvent("provider_response", "partial");
     persistEvent({
       ...providerEvent,
@@ -636,7 +707,6 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     });
   });
 
-  // Validate install config once at load (does not mutate anything).
   const v = validateConfig(config);
   if (!v.ok) {
     pi.logger.warn("WEConverge: install config invalid", { errors: v.errors });

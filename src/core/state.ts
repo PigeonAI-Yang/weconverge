@@ -1,15 +1,24 @@
-// Session-local state machine. Pure, immutable helpers. (CAP-002/006/012)
-//
-// Restore is two-phase so the wiring layer performs the REAL side effect:
-//   planRestore()    — pure: does the extension own effort, and what is the target?
-//   confirmRestore() — pure: fold the actual post-restore readback into state.
-// The wiring must call setSessionEffort + readbackActual between the two; mutating
-// only in-memory state without the real restore is a contract violation (REQ-012).
-import type { Effort, SessionStateV1 } from "./types";
+// Session-local state machine — pure advisory (2026-08-20).
+// One active full runtime per sessionId#generation + bounded detached tombstones.
+// No enforcement; advisory bookkeeping only.
+import type { DetachedTombstone, Effort, SessionStateV1 } from "./types";
 
 export interface Baseline {
   model: string | null;
   effort: Effort;
+}
+
+const MAX_TOMBSTONES_PER_GENERATION = 2;
+const MAX_PREVIEW = 200;
+
+function truncatePreview(s: string): string {
+  if (s.length <= MAX_PREVIEW) return s;
+  return s.slice(0, MAX_PREVIEW);
+}
+
+function pruneTombstones(list: DetachedTombstone[]): DetachedTombstone[] {
+  if (list.length <= MAX_TOMBSTONES_PER_GENERATION) return list;
+  return list.slice(list.length - MAX_TOMBSTONES_PER_GENERATION);
 }
 
 export function createInitialState(opts: {
@@ -34,6 +43,7 @@ export function createInitialState(opts: {
     automaticWavesUsed: 0,
     explorationWave: 0,
     ownedChildRuns: [],
+    detachedTombstones: [],
     manualExplorationGrant: null,
     lastDecision: null,
     routingIntegrity: opts.baseline.model !== null && opts.baseline.effort !== "unknown" ? "unverified" : "source_gap",
@@ -45,7 +55,7 @@ export function createInitialState(opts: {
   };
 }
 
-/** New task: new generation, empty state, no inheritance from previous task (REQ-011/AC-003). */
+/** New task: new generation, no inheritance (REQ-011). One active runtime invariant. */
 export function newGeneration(prev: SessionStateV1, baseline: Baseline): SessionStateV1 {
   return {
     ...createInitialState({ sessionId: "", enabledAtStart: prev.enabledAtStart, baseline }),
@@ -53,7 +63,7 @@ export function newGeneration(prev: SessionStateV1, baseline: Baseline): Session
   };
 }
 
-/** `reset` command: same generation, restore owned effort, rebuild clean baseline, keep audit (REQ-012/§15.1). */
+/** `reset` command: same generation, restore owned effort, rebuild clean baseline, keep audit. */
 export function resetGeneration(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
   const restored = restoreOwnedEffort(state, baseline);
   if (restored.restoreState === "failed") return restored;
@@ -66,6 +76,8 @@ export function resetGeneration(state: SessionStateV1, baseline: Baseline): Sess
     automaticWavesUsed: 0,
     explorationWave: 0,
     ownedChildRuns: [],
+    // retain tombstones across reset? Reset keeps audit but clears generation state; tombstones are per-generation bounded so clear.
+    detachedTombstones: [],
     manualExplorationGrant: null,
     lastEffortRaiseAt: null,
     lastDecision: null,
@@ -76,14 +88,20 @@ export function resetGeneration(state: SessionStateV1, baseline: Baseline): Sess
   };
 }
 
-/** Model switch: restore old ownership, generation++, clear old model state, new baseline (REQ-012/AC-039). */
+/** Model switch: restore old ownership, generation++, clear old state, new baseline. Switch destroys old full runtime. */
 export function modelSwitch(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
   const restored = restoreOwnedEffort(state, baseline);
   if (restored.restoreState === "failed") return restored;
-  const detachedChildren = restored.ownedChildRuns.map((c) => ({
-    ...c,
-    status: "detached" as const,
+  // Move any running children to detached tombstones (bounded).
+  const tombstones: DetachedTombstone[] = restored.ownedChildRuns.map((c) => ({
+    childId: c.childAgentId,
+    parentToolCallId: null,
+    sessionFile: null,
+    status: "detached",
+    resolvedModel: null,
+    preview: "",
   }));
+  const nextTombstones = pruneTombstones([...restored.detachedTombstones, ...tombstones]);
   return {
     ...restored,
     generation: state.generation + 1,
@@ -99,7 +117,8 @@ export function modelSwitch(state: SessionStateV1, baseline: Baseline): SessionS
     evidence: [],
     automaticWavesUsed: 0,
     explorationWave: 0,
-    ownedChildRuns: detachedChildren,
+    ownedChildRuns: [],
+    detachedTombstones: nextTombstones,
     manualExplorationGrant: null,
     lastDecision: null,
     routingIntegrity: baseline.model !== null && baseline.effort !== "unknown" ? "unverified" : "source_gap",
@@ -109,30 +128,35 @@ export function modelSwitch(state: SessionStateV1, baseline: Baseline): SessionS
   };
 }
 
-/** `off`: restore owned effort, detach running WEConverge children, clear grant; never terminate user children (REQ-012/AC-038/AC-040). */
+/** `off`: restore owned effort, detach running children as tombstones, never cancel user children. */
 export function applyOff(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
   const restored = restoreOwnedEffort(state, baseline);
   if (restored.restoreState === "failed") return restored;
+  const tombstones: DetachedTombstone[] = restored.ownedChildRuns
+    .filter((c) => c.status === "running")
+    .map((c) => ({
+      childId: c.childAgentId,
+      parentToolCallId: null,
+      sessionFile: null,
+      status: "detached",
+      resolvedModel: null,
+      preview: "",
+    }));
   return {
     ...restored,
     enabledAtStart: false,
     phase: "disabled",
     manualExplorationGrant: null,
     ownedChildRuns: restored.ownedChildRuns.map((c) => ({ ...c, status: "detached" as const })),
+    detachedTombstones: pruneTombstones([...restored.detachedTombstones, ...tombstones]),
   };
 }
 
-/**
- * Pure state fold for restore (test seam). The REAL restore must go through
- * planRestore -> adapters.setSessionEffort -> adapters.readbackActual -> confirmRestore
- * in the wiring layer; this helper alone is memory-only and exists for mechanical tests.
- */
 export function restoreOwnedEffort(state: SessionStateV1, baseline: Baseline): SessionStateV1 {
   if (state.restoreState === "failed") return { ...state, health: "degraded" };
   if (!state.effortOwnedByExtension) {
     return { ...state, restoreState: "not_needed" };
   }
-  // If persisted baseline can't be read back, mark failed + degraded but do NOT modify persistent config.
   if (baseline.effort === "unknown" && baseline.model === null) {
     return { ...state, restoreState: "failed", health: "degraded" };
   }
@@ -145,17 +169,11 @@ export function restoreOwnedEffort(state: SessionStateV1, baseline: Baseline): S
   };
 }
 
-/** Phase 1 of a real restore: what must the wiring set+readback? null => nothing owned. */
 export function planRestore(state: SessionStateV1): { needed: boolean; target: Baseline } {
   if (!state.effortOwnedByExtension) return { needed: false, target: { model: state.baselineModel, effort: state.baselineEffort } };
   return { needed: true, target: { model: state.baselineModel, effort: state.baselineEffort } };
 }
 
-/**
- * Phase 2 of a real restore: fold the post-restore readback into state.
- * Unknown/unreadable actual, or actual still different from the target, is failed+degraded —
- * never reported as restored (REQ-012/AC-027).
- */
 export function confirmRestore(
   state: SessionStateV1,
   target: Baseline,
@@ -185,7 +203,6 @@ export function confirmRestore(
   };
 }
 
-/** Detect external ownership change: actual differs from owned baseline while owned (REQ-013/AC-025). */
 export function detectExternalOwnershipChange(
   state: SessionStateV1,
   actual: Baseline,
@@ -195,7 +212,6 @@ export function detectExternalOwnershipChange(
   return actual.effort !== state.currentEffort || actual.model !== state.currentModel;
 }
 
-/** Relinquish ownership after an external change: keep actual values, mark degraded, re-baseline (REQ-013). */
 export function relinquishOwnership(state: SessionStateV1, actual: Baseline): SessionStateV1 {
   return {
     ...state,
@@ -209,58 +225,99 @@ export function relinquishOwnership(state: SessionStateV1, actual: Baseline): Se
   };
 }
 
-/** Mark a running WEConverge child as detached (off / late result) — visible, not in routing (REQ-053/AC-038). */
 export function markChildDetached(state: SessionStateV1, childId: string): SessionStateV1 {
   return {
     ...state,
-    ownedChildRuns: state.ownedChildRuns.map((c) =>
-      c.childAgentId === childId ? { ...c, status: "detached" as const } : c,
-    ),
+    ownedChildRuns: state.ownedChildRuns.map((c) => (c.childAgentId === childId ? { ...c, status: "detached" as const } : c)),
   };
 }
 
-/** Mark a child result stale when generation/phase/model changed (REQ-053/AC-015). */
 export function markChildStale(state: SessionStateV1, childId: string): SessionStateV1 {
   return {
     ...state,
-    ownedChildRuns: state.ownedChildRuns.map((c) =>
-      c.childAgentId === childId ? { ...c, status: "stale" as const } : c,
-    ),
+    ownedChildRuns: state.ownedChildRuns.map((c) => (c.childAgentId === childId ? { ...c, status: "stale" as const } : c)),
   };
 }
 
 export function markChildTerminal(state: SessionStateV1, childId: string): SessionStateV1 {
   return {
     ...state,
-    ownedChildRuns: state.ownedChildRuns.map((c) =>
-      c.childAgentId === childId ? { ...c, status: "terminal" as const } : c,
-    ),
+    ownedChildRuns: state.ownedChildRuns.map((c) => (c.childAgentId === childId ? { ...c, status: "terminal" as const } : c)),
   };
 }
 
-/**
- * Manual exploration grant bound to the current generation + task_end (SPEC §5.1 / AC-040).
- * Does NOT lift the Max ban; only widens parallel/wave limits within the current generation.
- */
 export function grantManualExploration(
   state: SessionStateV1,
   extraWaves: number,
   maxParallel: number,
 ): SessionStateV1 {
-  const safeWaves = Math.max(0, Math.min(extraWaves, 2)); // still capped; never unbounded
-  const safeParallel = Math.max(1, Math.min(maxParallel, 4));
   return {
     ...state,
     manualExplorationGrant: {
       generation: state.generation,
-      extraWaves: safeWaves,
-      maxParallel: safeParallel,
+      extraWaves,
+      maxParallel,
       expiresAt: "task_end",
     },
   };
 }
 
-/** Grant is invalid once generation changes (model switch) — caller clears it via modelSwitch. */
 export function isGrantValidForGeneration(state: SessionStateV1): boolean {
   return state.manualExplorationGrant?.generation === state.generation;
+}
+/** Pure advisory: no global automatic action block. Always null. */
+export function automaticActionBlockReason(_state: SessionStateV1): string | null {
+  return null;
+}
+
+// ---- Advisory observation helpers ----
+
+/** Record an observed tool_call for task — advisory only, increments observed wave. */
+export function recordObservedTaskCall(
+  state: SessionStateV1,
+  childInfo: { childId: string; generation: number },
+): SessionStateV1 {
+  const wave = state.explorationWave + 1;
+  return {
+    ...state,
+    explorationWave: wave,
+    automaticWavesUsed: Math.min(2, wave) as 0 | 1 | 2,
+    ownedChildRuns: [
+      ...state.ownedChildRuns,
+      { childAgentId: childInfo.childId, generation: childInfo.generation, status: "running" as const },
+    ],
+    phase: "external_exploration",
+  };
+}
+
+/** Record observed tool_result — marks child terminal, moves to integrating. */
+export function recordObservedTaskResult(
+  state: SessionStateV1,
+  childId: string,
+): SessionStateV1 {
+  return {
+    ...state,
+    ownedChildRuns: state.ownedChildRuns.map((c) => (c.childAgentId === childId ? { ...c, status: "terminal" as const } : c)),
+    phase: "integrating",
+  };
+}
+
+/** Add a detached tombstone (late child after switch/off), bounded to 2 per generation. */
+export function addDetachedTombstone(state: SessionStateV1, t: DetachedTombstone): SessionStateV1 {
+  const preview = truncatePreview(t.preview);
+  const entry: DetachedTombstone = { ...t, preview };
+  return {
+    ...state,
+    detachedTombstones: pruneTombstones([...state.detachedTombstones, entry]),
+  };
+}
+
+/** Fail-open observer wrapper: any handler error marks degraded but never throws. */
+export function observeFailOpen(state: SessionStateV1, fn: () => void, reason: string): SessionStateV1 {
+  try {
+    fn();
+    return state;
+  } catch {
+    return { ...state, health: "degraded", sourceGaps: [...state.sourceGaps, `observer:${reason}`] };
+  }
 }

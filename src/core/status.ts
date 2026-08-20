@@ -1,4 +1,4 @@
-// Status rendering. Unknown values must show "unknown"/"SOURCE GAP", never a false "confirmed". (CAP-010/AC-028)
+// Status rendering — pure advisory (unknown => "unknown"/"SOURCE GAP").
 import type { ConfigV1, Effort, SessionStateV1 } from "./types";
 
 export interface StatusView {
@@ -7,7 +7,6 @@ export interface StatusView {
   generation: number;
   baselineModel: string;
   baselineEffort: string;
-  /** LIVE readback at status time — never a stale cached value (2026-08-20 contract). */
   actualModel: string;
   actualEffort: string;
   effortOwner: string;
@@ -20,6 +19,7 @@ export interface StatusView {
   health: string;
   sourceGaps: string[];
   priceTelemetry: string;
+  advisoryNote: string;
 }
 
 const UNKNOWN = "unknown";
@@ -31,12 +31,6 @@ function fmtEffort(e: Effort): string {
   return e === "unknown" ? UNKNOWN : e;
 }
 
-/**
- * Render status. `actual` is the live OMP readback taken at status time:
- *  - object: show its values;
- *  - null: readback failed -> show "unknown";
- *  - undefined (tests/pure contexts): fall back to state values.
- */
 export function renderStatus(
   state: SessionStateV1,
   _config: ConfigV1,
@@ -61,6 +55,7 @@ export function renderStatus(
     restoreState: state.restoreState,
     health: state.health,
     sourceGaps: state.sourceGaps,
-    priceTelemetry: "SOURCE GAP", // no price/quota telemetry available (SPEC §13)
+    priceTelemetry: "SOURCE GAP",
+    advisoryNote: "pure advisory — no enforcement",
   };
 }

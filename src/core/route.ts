@@ -1,14 +1,14 @@
-// Role resolution + preflight + resolved-route construction. (CAP-007)
-import type { ConfigV1, DifficultyType, Effort, OmpAdapters, ResolvedRouteV1, SemanticAction } from "./types";
+// Role resolution — advisory only (no preflight blocking, no Max ban).
+import type { ConfigV1, DifficultyType, SemanticAction } from "./types";
 
-/** CAP-007.3: capability -> OMP role. Missing role => null (SOURCE GAP, never silent fallback). */
+/** Capability -> OMP role. Missing role => null (SOURCE GAP, never silent fallback). */
 export function resolveCapability(cfg: ConfigV1, capability: string): string | null {
   if (!capability) return null;
   const role = cfg.capabilities[capability];
   return role && role.length > 0 ? role : null;
 }
 
-/** SPEC §9.3 preferred difficulty->action map (not a fixed classifier). */
+/** Preferred difficulty->action map (advisory, not enforced). */
 export function preferredActionFor(difficulty: DifficultyType): SemanticAction {
   switch (difficulty) {
     case "path_unclear":
@@ -28,82 +28,13 @@ export function preferredActionFor(difficulty: DifficultyType): SemanticAction {
   }
 }
 
-/**
- * Preflight the target role's effort BEFORE any provider call (REQ-042/AC-019/CP-003).
- * Returns "unavailable" when the public API cannot resolve effort pre-call => BLOCKED (no call made).
- */
-export function preflightEffort(role: string, adapters: OmpAdapters): Effort | "blocked" | "unavailable" {
-  return adapters.preflightEffort(role);
-}
-
-function gapRoute(requestedRole: string | null, parentAgentId: string | null, childAgentId: string | null): ResolvedRouteV1 {
-  return {
-    requestedRole,
-    resolvedAgent: null,
-    resolvedModel: null,
-    resolvedEffort: "unknown",
-    parentAgentId,
-    childAgentId,
-    source: "unavailable",
-    integrity: "source_gap",
-  };
-}
-
-/**
- * Build a ResolvedRouteV1 keeping requested vs resolved strictly separated (REQ-064/AC-022).
- * Hard rules (2026-08-20 contract):
- *  - the requested role is NEVER copied into resolvedAgent;
- *  - the parent session's model/effort is NEVER reported as a child's actual route;
- *  - integrity is `confirmed` only when agent AND model AND effort are all known;
- *  - effort "unknown" can never be reported as confirmed.
- */
-export function buildResolvedRoute(args: {
-  requestedRole: string | null;
-  parentAgentId: string | null;
-  childAgentId: string | null;
-  adapters: OmpAdapters;
-}): ResolvedRouteV1 {
-  const { requestedRole, parentAgentId, childAgentId, adapters } = args;
-  if (!requestedRole) {
-    return gapRoute(null, parentAgentId, childAgentId);
-  }
-  if (childAgentId !== null) {
-    // Child route: must come from a per-child readback. No readback => SOURCE GAP.
-    const child = adapters.readbackChildRoute?.(childAgentId) ?? null;
-    if (!child) {
-      return { ...gapRoute(requestedRole, parentAgentId, childAgentId) };
-    }
-    const known = child.agent !== null && child.model !== null && child.effort !== "unknown" && child.effort !== "max";
-    return {
-      requestedRole,
-      resolvedAgent: child.agent,
-      resolvedModel: child.model,
-      resolvedEffort: child.effort,
-      parentAgentId,
-      childAgentId,
-      source: "omp",
-      integrity: known ? "confirmed" : "source_gap",
-    };
-  }
-  // Main-session route (e.g. raise_effort on the current session).
-  const actual = adapters.readbackActual();
-  if (!actual) {
-    return gapRoute(requestedRole, parentAgentId, null);
-  }
-  const known = actual.model !== null && actual.effort !== "unknown" && actual.effort !== "max";
-  return {
-    requestedRole,
-    resolvedAgent: null, // main session is not an agent child; no fabricated agent name
-    resolvedModel: actual.model,
-    resolvedEffort: actual.effort,
-    parentAgentId,
-    childAgentId: null,
-    source: "omp",
-    integrity: known ? "confirmed" : "source_gap",
-  };
-}
-
 export function roleRelativeCostTier(cfg: ConfigV1, role: string): number | null {
   const v = cfg.relativeCostTiers[role];
   return typeof v === "number" ? v : null;
+}
+
+/** Advisory annotation: is a model name Max-capable? Inferred, not observed. */
+export function isInferredMaxCapable(modelId: string | null): boolean {
+  if (!modelId) return false;
+  return modelId.toLowerCase().includes("max") || modelId.toLowerCase().includes("cockpit");
 }

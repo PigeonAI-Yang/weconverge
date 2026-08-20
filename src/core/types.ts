@@ -1,12 +1,5 @@
-// WEConverge core types — faithful to SPEC §4 / §5.1.
+// WEConverge core types — pure advisory (2026-08-20).
 // Pure types only; no runtime OMP dependency.
-//
-// Implementation extensions beyond SPEC §4 literal shapes (authorized by the
-// 2026-08-20 Owner supplementary contract; none weaken any SPEC invariant):
-//  - SessionStateV1.lastEffortRaiseAt: proves "new verified attempt since last raise"
-//    from anchored evidence timestamps instead of a model-claimed boolean (SPEC §11.2.5).
-//  - AuditEventV1.eventId: SPEC §9.0 requires returning auditEventId, so events carry ids.
-//  - AuditEventV1.costComparison: SPEC §13 requires candidates/exclusions/tiers/choice in audit.
 
 export type SemanticAction =
   | "continue_current"
@@ -27,7 +20,7 @@ export type DifficultyType =
   | "source_missing"
   | "proven_blocker";
 
-/** `max` is only for detection/rejection, never an automatic state-machine target. */
+/** `max` is only for detection, never an automatic target. */
 export type Effort = "medium" | "high" | "xhigh" | "max" | "unknown";
 
 export type Phase =
@@ -49,6 +42,8 @@ export type Integrity =
   | "failed"
   | "stale"
   | "degraded";
+
+export type FactLabel = "requested" | "expected" | "observed" | "inferred" | "source_gap";
 
 export interface EvidenceRefV1 {
   id: string;
@@ -72,7 +67,6 @@ export interface ConvergenceDecisionV1 {
   alternativeId?: string;
   capability?: string;
   noSafeAlternativeReason?: string;
-  /** Internal-search record (SPEC §9.1): selected direction + backup direction ids. */
   selectedDirectionId?: string;
   alternativeDirectionIds?: string[];
   sourceGap?: {
@@ -99,6 +93,16 @@ export interface ResolvedRouteV1 {
   integrity: "confirmed" | "source_gap";
 }
 
+/** Minimal detached tombstone — bounded, ≤200 chars preview, no handlers. */
+export interface DetachedTombstone {
+  childId: string;
+  parentToolCallId: string | null;
+  sessionFile: string | null;
+  status: string;
+  resolvedModel: string | null;
+  preview: string; // ≤200 chars
+}
+
 export interface SessionStateV1 {
   schemaVersion: 1;
   generation: number;
@@ -109,18 +113,21 @@ export interface SessionStateV1 {
   currentModel: string | null;
   currentEffort: Effort;
   effortOwnedByExtension: boolean;
-  /** ISO time of the last accepted raise_effort; null if never raised this generation. */
   lastEffortRaiseAt: string | null;
   selectedDirection: string | null;
   alternativeDirectionIds: string[];
   evidence: EvidenceRefV1[];
-  automaticWavesUsed: 0 | 1 | 2;
+  /** Observed count of task batches emitted by parent (advisory, not enforced). */
   explorationWave: number;
+  /** Legacy wave counter kept for compat but not enforced; mirrors explorationWave. */
+  automaticWavesUsed: 0 | 1 | 2;
   ownedChildRuns: Array<{
     childAgentId: string;
     generation: number;
     status: "running" | "terminal" | "detached" | "stale";
   }>;
+  /** Bounded minimal detached tombstones (max 2 per generation, oldest dropped). */
+  detachedTombstones: DetachedTombstone[];
   manualExplorationGrant: {
     generation: number;
     extraWaves: number;
@@ -129,13 +136,7 @@ export interface SessionStateV1 {
   } | null;
   lastDecision: ConvergenceDecisionV1 | null;
   routingIntegrity: "unverified" | "confirmed" | "source_gap" | "failed";
-  taskOutcome:
-    | "not_started"
-    | "in_progress"
-    | "passed"
-    | "failed"
-    | "partial"
-    | "blocked";
+  taskOutcome: "not_started" | "in_progress" | "passed" | "failed" | "partial" | "blocked";
   sourceGaps: string[];
   blockedReason: string | null;
   restoreState: "not_needed" | "pending" | "restored" | "failed";
@@ -145,19 +146,20 @@ export interface SessionStateV1 {
 export interface ConfigV1 {
   schemaVersion: 1;
   enabled: boolean;
+  /** Advisory only — shown in status/audit, not enforced as a block. */
   maxParallelExplorers: number;
+  /** Advisory only — not enforced. */
   maxExplorationWaves: number;
   capabilities: Record<string, string>;
   relativeCostTiers: Record<string, number>;
   effortCostTiers: Record<string, number>;
 }
 
-/** SPEC §13: candidates, exclusion reasons, cost tiers and the final choice must be auditable. */
+/** SPEC §13: candidates, exclusion reasons, cost tiers and final choice. */
 export interface CostComparisonV1 {
   candidates: Array<{
     action: SemanticAction;
     costTier: number | null;
-    /** non-null when the candidate was excluded before cost comparison */
     excluded: string | null;
   }>;
   chosen: SemanticAction | null;
@@ -183,7 +185,6 @@ export interface AuditEventV1 {
   result: Integrity;
   sourceGaps: string[];
   restoreResult: string | null;
-  /** Additive replay facts; optional for older valid events. */
   decisionId?: string | null;
   payloadHash?: string | null;
   decisionStatus?: "accepted" | "rejected" | "blocked" | "source_gap" | null;
@@ -191,11 +192,16 @@ export interface AuditEventV1 {
   effectiveAction?: SemanticAction | null;
   createdChildIds?: string[];
   resolvedRoutes?: ResolvedRouteV1[];
-  /** Sanitized post-event state used for deterministic replay/recovery. */
   stateSnapshot?: SessionStateV1 | null;
+  /** Advisory taxonomy fields — explicit requested/expected/observed/inferred/source_gap separation. */
+  requested?: { agent?: string | null; effort?: string | null; taskPreview?: string | null } | null;
+  expected?: { role?: string | null; relativeCostTier?: number | null } | null;
+  observed?: { resolvedModel?: string | null; lifecycle?: string | null } | null;
+  inferred?: { relativeCostTierNote?: string | null; maxCapable?: boolean | null } | null;
+  isDetachedTombstone?: boolean;
 }
 
-// ---- Injected OMP adapters (implemented only in wiring layer) ----
+// ---- Injected OMP adapters (pure advisory — no dispatch) ----
 export interface ChildSpec {
   capability: string;
   directionId: string;
@@ -205,7 +211,6 @@ export interface ChildSpec {
   parentSessionId: string;
 }
 
-/** Actual route of a specific child agent, read back per child (never inferred from parent). */
 export interface ChildRoute {
   agent: string | null;
   model: string | null;
@@ -213,25 +218,13 @@ export interface ChildRoute {
 }
 
 export interface OmpAdapters {
-  /** CAP-007: capability -> OMP role name, or null if unmapped. */
+  /** capability -> OMP role name, or null if unmapped (SOURCE GAP). */
   resolveRole(capability: string): string | null;
-  /** CP-003: resolve the role's effort BEFORE a provider call. `unavailable` => BLOCKED. */
-  preflightEffort(role: string): Effort | "blocked" | "unavailable";
-  /** CP-006 / CP-004(main): read back current session actual model/effort. null => SOURCE GAP. */
+  /** Read back current session actual model/effort. null => SOURCE GAP. */
   readbackActual(): { model: string | null; effort: Effort } | null;
-  /**
-   * CP-004(child): read back one child's actual route. null => not readable.
-   * Must be per-child; reading one child never stands in for the others.
-   */
-  readbackChildRoute?(childAgentId: string): ChildRoute | null;
-  /** CP-005: session-local effort set, no persistent config change. Returns success. */
+  /** Session-local effort set, no persistent config change. Returns success. */
   setSessionEffort(effort: Effort): boolean;
-  /** CP-001: emit a real OMP child Agent. Absent/undefined => automatic dispatch BLOCKED. */
-  emitChild?(spec: ChildSpec): { childAgentId: string } | null;
-  /**
-   * CP-008: number of provider calls observed so far by this adapter (instrumentation).
-   * Used to prove a guarded path made ZERO provider calls; never substituted by emitChild=0.
-   */
+  /** Provider call count instrumentation (optional). */
   providerCallCount?(): number;
 }
 
@@ -262,6 +255,6 @@ export const DEFAULT_CONFIG: ConfigV1 = {
   },
 };
 
-// Allowed automatic effort targets (REQ-030/REQ-032). `max` excluded.
+// Allowed automatic effort targets. `max` excluded.
 export const AUTO_EFFORTS: Effort[] = ["medium", "high", "xhigh"];
 export const BLOCKED_RESULT: Integrity = "blocked";
