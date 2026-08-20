@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "project": "WEConverge",
   "version": "1.0.0",
-  "updatedAt": "2026-08-20T15:10:00+08:00",
+  "updatedAt": "2026-08-20T22:10:00+08:00",
   "statusCorrection": {
     "date": "2026-08-20",
     "reason": "2026-08-19 验收结论 REJECTED：ACCEPTANCE/ledger 与现场证据不一致（错误完成声明/证据失真）。本段保留该历史纠偏及证据；当前修复后 T04/T05/T06/T08 已完成，T07 仍因 AC-101..115 的 BLOCKED/SOURCE GAP 保持 blocked，T09 在真实本地 commit 前保持 pending。",
@@ -16,7 +16,7 @@
   "advisoryMigration": {
     "date": "2026-08-20",
     "authority": "docs/spark/2026-08-20-weconverge-pure-advisory-design.md (Owner-approved pure advisory) + explicit Owner authorization for PLAN/ledger/checker migration",
-    "note": "历史 T01..T09 定性原样保留；T10 为本次纯咨询规划迁移（唯一 in_progress），T11..T13 为纯咨询实现 pending 链，T14 为修订版真实 OMP 咨询验收（blocked until revised AC passes）。未声称任何纯咨询实现已完成。",
+    "note": "历史 T01..T09 定性原样保留；T10 规划迁移已于 8ea7f34 完成；T11/T12/T13 纯咨询实现已于 commit 48621b9 完成（npm run typecheck:core exit 0, npm run check:types 32 members verified, mechanical POLICY 35 tokens ≤60, 65 passed 0 failed），T14 修订版真实 OMP 咨询验收因 ACCEPTANCE_ADVISORY.md 中 AC-L02 SOURCE GAP、AC-L04 NOT OBSERVED (PARTIAL)、AC-L05 SOURCE GAP、AC-C03 NOT OBSERVED 保持 blocked。",
     "retiredEnforcement": "D-01..D-07 enforcement（task wrapper/block/mutation/cancel/auto-dispatch/preflight Max/wave/concurrency/duplicate/compact-output）显式退役为 advisory 观察；详见 pure-advisory design §13。"
   },
   "acceptanceGate": {
@@ -25,8 +25,9 @@
   },
   "advisoryGate": {
     "liveTaskIds": ["T14"],
-    "realOmpAcs": ["AC-101", "AC-102", "AC-103", "AC-104", "AC-105", "AC-106", "AC-107", "AC-108", "AC-109", "AC-110", "AC-111", "AC-112", "AC-113", "AC-114", "AC-115"],
-    "rule": "修订版真实 OMP 咨询验收 T14 保持 blocked，直到修订版 ACCEPTANCE 对所列 AC 逐项具备真实 OMP PASS 证据；机械测试/旧 E-010 smoke 不得升格为 revised live done。"
+    "realOmpAcs": ["AC-L01", "AC-L02", "AC-L03", "AC-L04", "AC-L05", "AC-C01", "AC-C02", "AC-C03"],
+    "acceptanceFile": "ACCEPTANCE_ADVISORY.md",
+    "rule": "修订版真实 OMP 咨询验收 T14 保持 blocked，直到 ACCEPTANCE_ADVISORY.md 对 AC-L01..L05/AC-C01..C03 逐项具备真实 OMP PASS 证据；机械测试/旧 E-010 smoke 不得升格为 revised live done。当前 AC-L02 SOURCE GAP、AC-L04 NOT OBSERVED (PARTIAL)、AC-L05 SOURCE GAP、AC-C03 NOT OBSERVED，故 T14 保持 blocked。"
   },
   "tasks": [
     {
@@ -138,10 +139,9 @@
       "caps": ["CAP-005", "CAP-006", "CAP-007", "CAP-009", "CAP-011"],
       "acs": [],
       "deps": ["T10"],
-      "status": "in_progress",
-      "verifiedBy": "T10 done at 8ea7f34 (v4 checker exit 0); T11 now sole in_progress per PLAN dependency → in_progress.",
-      "note": "T11 in_progress: pure advisory core — remove task wrapper/block/mutation/cancel/auto-dispatch/preflight Max gating; keep before_agent_start ≤60 token advisory injection + observation-only observer (fail-open ≤5ms).",
-      "artifacts": []
+      "status": "done",
+      "verifiedBy": "commit 48621b9af5c320a9ea842f2d328c33dc30edb96d: pure advisory core — src/core/policy.ts POLICY_BLOCK 33 tokens (mechanical 35 tokens ≤60) + src/core/observation.ts + src/core/state.ts + src/core/decision.ts + src/core/audit.ts + src/extension.ts advisory wiring (before_agent_start ≤60 token generation-scoped injection + tool_call/tool_result/task:subagent:* observation-only fail-open ≤5ms); npm run typecheck:core → exit 0; npm run check:types → 32 members verified; no forbidden-zone diff.",
+      "artifacts": ["src/core/policy.ts", "src/core/observation.ts", "src/core/state.ts", "src/core/decision.ts", "src/core/audit.ts", "src/core/types.ts", "src/extension.ts"]
     },
     {
       "id": "T12",
@@ -149,9 +149,9 @@
       "caps": ["CAP-001", "CAP-002", "CAP-010", "CAP-012", "CAP-014"],
       "acs": [],
       "deps": ["T11"],
-      "status": "pending",
-      "note": "仅使用 before_agent_start systemPrompt、tool_call/tool_result/task:subagent:* 观察、appendEntry 审计；不调用 ctx.invokeTool(task)、不阻塞、不变异输入、不取消子任务。",
-      "artifacts": []
+      "status": "done",
+      "verifiedBy": "commit 48621b9: advisory OMP wiring — src/extension.ts before_agent_start systemPrompt (generation-scoped POLICY_BLOCK) + pi.on(tool_call/tool_result) + pi.events(task:subagent:*) observation-only, no ctx.invokeTool(task)/block/mutation/cancel; types/omp-extension-api.d.ts synced; node scripts/sync-omp-types.mjs → 32 members verified against real OMP Extension API; npm run typecheck:core → exit 0; forbidden zones untouched.",
+      "artifacts": ["src/extension.ts", "types/omp-extension-api.d.ts", "scripts/sync-omp-types.mjs", "src/core/policy.ts"]
     },
     {
       "id": "T13",
@@ -159,20 +159,20 @@
       "caps": ["CAP-013"],
       "acs": [],
       "deps": ["T11", "T12"],
-      "status": "pending",
-      "note": "mechanical 分层验证：策略注入有界性、fact taxonomy 隔离、observer fail-open、audit 脱敏与截断、单活运行时 + bounded tombstone；不声称真实 OMP 路由。",
-      "artifacts": []
+      "status": "done",
+      "verifiedBy": "commit 48621b9: node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/mechanical.test.ts → POLICY tokens=35 budget=60; 65 passed, 0 failed; npm run typecheck:core → exit 0; npm run check:types → 32 members verified; node scripts/check-ledger.mjs → exit 0; live report ACCEPTANCE_ADVISORY.md + docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md preserved (not promoted to live PASS).",
+      "artifacts": ["test/mechanical.test.ts", "src/core/policy.ts", "src/core/observation.ts", "ACCEPTANCE_ADVISORY.md"]
     },
     {
       "id": "T14",
       "title": "修订版真实 OMP 咨询验收 — 观察路径 live 验证",
       "caps": ["CAP-001", "CAP-014"],
-      "acs": ["AC-101", "AC-102", "AC-103", "AC-104", "AC-105", "AC-106", "AC-107", "AC-108", "AC-109", "AC-110", "AC-111", "AC-112", "AC-113", "AC-114", "AC-115"],
+      "acs": ["AC-L01", "AC-L02", "AC-L03", "AC-L04", "AC-L05", "AC-C01", "AC-C02", "AC-C03"],
       "deps": ["T13"],
       "status": "blocked",
-      "note": "修订版真实 OMP 咨询验收保持 blocked，直到修订版 ACCEPTANCE 对所列 AC 逐项具备真实 OMP PASS 证据；机械测试/E-010 smoke 不得升格为 revised live done。当前 ACCEPTANCE.md 仍含 BLOCKED/SOURCE GAP，SPEC §22 仍 NOT COMPLETE / REJECTED。",
-      "verifiedBy": "ACCEPTANCE.md 现状：AC-105/107/108 BLOCKED，AC-104/106/109/110/111/112/115 SOURCE GAP，整体 NOT COMPLETE / REJECTED；T14 因此保持 blocked。",
-      "artifacts": ["ACCEPTANCE.md"]
+      "note": "修订版真实 OMP 咨询验收保持 blocked，直到 ACCEPTANCE_ADVISORY.md 对 AC-L01..L05/AC-C01..C03 逐项具备真实 OMP PASS 证据；机械测试/E-010 smoke 不得升格为 revised live done。当前 ACCEPTANCE_ADVISORY.md: AC-L02 SOURCE GAP, AC-L04 NOT OBSERVED (PARTIAL), AC-L05 SOURCE GAP, AC-C03 NOT OBSERVED; AC-L01 PASS, AC-L03 PASS (with subfield SOURCE GAP), AC-C01 PASS, AC-C02 PASS; SPEC §22.2 NOT COMPLETE.",
+      "verifiedBy": "ACCEPTANCE_ADVISORY.md §0/§4/§5/§8: AC-L02 SOURCE GAP (per-request systemPrompt not exposed via public API), AC-L04 NOT OBSERVED (PARTIAL, off without running child), AC-L05 SOURCE GAP (session_switch not exercised), AC-C03 NOT OBSERVED (child output length not observed); AC-L01 PASS, AC-L03 PASS (with subfield SOURCE GAP), AC-C01 PASS, AC-C02 PASS; live smoke docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md E-L01..E-L08; therefore T14 remains blocked.",
+      "artifacts": ["ACCEPTANCE_ADVISORY.md", "docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md"]
     }
   ]
 }

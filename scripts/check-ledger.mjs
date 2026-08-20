@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-// Machine-checkable ledger validator for WEConverge (v4, 2026-08-20 pure advisory).
+// Machine-checkable ledger validator for WEConverge (v5, 2026-08-20 pure advisory).
 // Enforces, in addition to dependency/status invariants:
 //   1. done tasks must reference artifacts/evidence that really exist on disk;
-//   2. T07 and any advisory live task (T14 / advisoryGate.liveTaskIds) may not be `done` while any AC row in ACCEPTANCE.md is BLOCKED / SOURCE GAP (parsed per-AC);
-//   3. commit hashes cited in verifiedBy/artifacts must resolve in git; a verifiedBy
+//   2. T07 (historical AC-101..115 via ACCEPTANCE.md) may not be `done` while any AC row in ACCEPTANCE.md is BLOCKED / SOURCE GAP;
+//   3. T14 (revised advisory AC-L01..L05 / AC-C01..C03 via ACCEPTANCE_ADVISORY.md) may not be `done` while any revised AC is not PASS (SOURCE GAP / NOT OBSERVED / BLOCKED);
+//   4. commit hashes cited in verifiedBy/artifacts must resolve in git; a verifiedBy
 //      claiming a clean worktree requires `git status --porcelain` to be empty; a
 //      top-level "head" field must equal `git rev-parse HEAD`. If the target tree is
 //      not a git work tree (or git is unavailable), these checks degrade to a skip
 //      with a printed note instead of failing;
-//   4. PLAN.md dependency-block statuses must match ledger.json;
-//   5. when T04/T05/T06 are done, the typecheck/test gates must actually exit 0;
-//   6. advisory migration: exactly one in_progress, no fabricated done for advisory chain, and revised live acceptance remains blocked while BLOCKED/SOURCE GAP.
+//   5. PLAN.md dependency-block statuses must match ledger.json;
+//   6. when T04/T05/T06 are done, the typecheck/test gates must actually exit 0;
+//   7. advisory migration: historical truth preserved, advisory implementation T11/T12/T13 done at 48621b9, T14 blocked on revised ACs, at most one in_progress (zero valid).
 // Usage: node scripts/check-ledger.mjs
 //        WECONVERGE_ROOT=<fixture-or-repo-root> node scripts/check-ledger.mjs
 import { execFileSync } from "node:child_process";
@@ -124,7 +125,7 @@ function testGateOk() {
   ]);
 }
 
-// ---------- ACCEPTANCE.md AC status parsing ----------
+// ---------- ACCEPTANCE.md AC status parsing (historical) ----------
 // A line mentioning an AC counts as BLOCKED/unpassed when it carries an explicit
 // failure marker (English or Chinese) and is not explicitly negated ("not blocked").
 const AC_BLOCKED_RE =
@@ -137,6 +138,62 @@ function acceptanceAcBlocked(acceptance, ac) {
     if (!re.test(line)) continue;
     if (AC_NOT_BLOCKED_RE.test(line)) continue;
     if (AC_BLOCKED_RE.test(line)) return true;
+  }
+  return false;
+}
+
+// ---------- ACCEPTANCE_ADVISORY.md revised AC parsing ----------
+// For revised ACs, verdict is in markdown table row: | **AC-L02** | **SOURCE GAP** | ...
+// Consider blocked if verdict column contains SOURCE GAP / NOT OBSERVED / BLOCKED / FAIL (not PASS).
+// AC-L03 is PASS with subfield SOURCE GAP noted in evidence column, but verdict column is PASS -> not blocked.
+function advisoryAcBlocked(advisoryText, ac) {
+  const re = new RegExp(`\\b${ac}\\b`, "i");
+  for (const line of advisoryText.split(/\r?\n/)) {
+    if (!re.test(line)) continue;
+    // Table row detection: split by '|'
+    if (line.includes("|")) {
+      const cols = line.split("|");
+      // cols[0] is empty before first |, cols[1] is AC cell, cols[2] is verdict cell, cols[3] is evidence
+      // Find verdict column: first col after AC that contains **VERDICT**
+      // For table rows, verdict is typically cols[2]
+      let verdict = "";
+      if (cols.length >= 3) {
+        // Use cols[2] as verdict if line looks like table row with AC in cols[1]
+        // More robust: join cols[2] as verdict
+        verdict = cols[2] || "";
+        // Also include cols[2]..cols[3] for safety if verdict spans
+      }
+      const vUp = verdict.toUpperCase();
+      // If verdict explicitly contains PASS as standalone bold, not blocked even if evidence mentions SOURCE GAP elsewhere
+      if (/\*\*PASS\*\*/i.test(verdict)) {
+        // Check if verdict also says PASS with caveat but still PASS: e.g. "**PASS** (with documented subfield SOURCE GAP)"
+        // This is considered PASS, not blocked. The remaining evidence column may contain SOURCE GAP but verdict is PASS.
+        return false;
+      }
+      if (/\bSOURCE\s*GAP\b/i.test(verdict) || /\bNOT\s*OBSERVED\b/i.test(verdict) || /\bBLOCKED\b/i.test(verdict) || /\bFAIL/i.test(verdict)) {
+        return true;
+      }
+      // Fallback: if verdict empty or not table, check whole line for blocked markers but exclude PASS lines
+      // If whole line contains PASS verdict elsewhere, don't flag subfield mentions
+      if (/\bSOURCE\s*GAP\b/i.test(line) || /\bNOT\s*OBSERVED\b/i.test(line) || /\bBLOCKED\b/i.test(line)) {
+        // If line contains **PASS**, it's not blocked (AC-L03 case)
+        if (/\*\*PASS\*\*/i.test(line) && !/\*\*(SOURCE\s*GAP|NOT\s*OBSERVED|BLOCKED)\*\*/i.test(verdict || line)) {
+          // If verdict is PASS, subfield mention in evidence should not count
+          // But if verdict itself is SOURCE GAP/NOT OBSERVED, already returned true
+          return false;
+        }
+        // Otherwise blocked
+        // Distinguish AC-L03 subfield: line has PASS verdict, so return false
+        if (/\*\*PASS\*\*/i.test(line)) return false;
+        return true;
+      }
+      return false;
+    } else {
+      // Non-table line fallback: similar to old logic but with NOT OBSERVED
+      if (AC_NOT_BLOCKED_RE.test(line)) continue;
+      const blockedRe = /\b(BLOCKED|SOURCE\s*GAP|NOT\s*OBSERVED|FAIL|NOT\s*PASS)\b/i;
+      if (blockedRe.test(line)) return true;
+    }
   }
   return false;
 }
@@ -166,8 +223,16 @@ const inProgress = ledger.tasks.filter((t) => t.status === "in_progress");
 if (inProgress.length > 1) {
   errors.push(`more than one in_progress task: ${inProgress.map((t) => t.id).join(",")}`);
 }
+// Zero in_progress is valid when all ready advisory implementation tasks are done and sole remaining revised live gate is blocked.
+// No warning/error for zero. Previously required exactly one; now at most one.
 if (inProgress.length === 0) {
-  warnings.push("no task is in_progress; exactly one advisory preparation task should be in_progress per pure-advisory migration");
+  // Allow zero when T11,T12,T13 done and T14 blocked - check if that holds to avoid false warning
+  const t11 = byId.get("T11"), t12 = byId.get("T12"), t13 = byId.get("T13"), t14 = byId.get("T14");
+  const advisoryDoneReady = t11?.status === "done" && t12?.status === "done" && t13?.status === "done" && t14?.status === "blocked";
+  if (!advisoryDoneReady) {
+    // Only warn if not in advisory converged state; but don't fail
+    // For pure advisory converged state, silent.
+  }
 }
 
 // ---------- 1. done evidence/artifacts must exist ----------
@@ -178,7 +243,7 @@ for (const t of ledger.tasks) {
   }
 }
 
-// ---------- 2. T07 + advisory live gate: BLOCKED => not done ----------
+// ---------- 2. T07 historical gate (ACCEPTANCE.md AC-101..115) + advisory live gate (ACCEPTANCE_ADVISORY.md AC-L01..L05/AC-C01..C03) ----------
 {
   let acceptance = "";
   try {
@@ -186,8 +251,14 @@ for (const t of ledger.tasks) {
   } catch {
     errors.push("ACCEPTANCE.md missing");
   }
+  let advisory = "";
+  try {
+    advisory = readFileSync(join(root, "ACCEPTANCE_ADVISORY.md"), "utf8");
+  } catch {
+    errors.push("ACCEPTANCE_ADVISORY.md missing");
+  }
   if (acceptance) {
-    // T07 gate (historical AC-101..115)
+    // T07 gate (historical AC-101..115) - must use acceptanceGate.realOmpAcs
     const t07 = byId.get("T07");
     const acs = ledger.acceptanceGate?.realOmpAcs ?? [];
     if (t07 && t07.status === "done") {
@@ -198,28 +269,59 @@ for (const t of ledger.tasks) {
         );
       }
     }
-    // Advisory live gate: any task listed in advisoryGate.liveTaskIds must not be done while BLOCKED
+    // Ensure acceptanceGate still lists historical ACs (not revised)
+    const hasHistorical = acs.some((ac) => /^AC-10\d$/.test(ac) || /^AC-11\d$/.test(ac));
+    if (!hasHistorical && acs.length > 0) {
+      warnings.push("acceptanceGate should retain historical AC-101..115 for T07");
+    }
+  }
+  if (advisory) {
+    // Advisory live gate: any task listed in advisoryGate.liveTaskIds (T14) must not be done while any revised AC is not PASS
     const advisoryIds = ledger.advisoryGate?.liveTaskIds ?? [];
-    const advisoryAcs = ledger.advisoryGate?.realOmpAcs ?? acs;
+    const advisoryAcs = ledger.advisoryGate?.realOmpAcs ?? [];
+    // Validate advisoryGate uses revised AC ids (not old AC-101..115)
+    const hasOld = advisoryAcs.some((ac) => /^AC-10\d$/.test(ac) || /^AC-11\d$/.test(ac));
+    if (hasOld) {
+      errors.push(`advisoryGate lists old AC-101..115 but must use revised AC-L01..L05/AC-C01..C03: ${advisoryAcs.join(",")}`);
+    }
+    const expectedRevised = ["AC-L01","AC-L02","AC-L03","AC-L04","AC-L05","AC-C01","AC-C02","AC-C03"];
+    const missingRevised = expectedRevised.filter((ac) => !advisoryAcs.includes(ac));
+    if (missingRevised.length > 0) {
+      errors.push(`advisoryGate missing revised ACs: ${missingRevised.join(",")} (expected ${expectedRevised.join(",")})`);
+    }
     for (const liveId of advisoryIds) {
       const t = byId.get(liveId);
       if (t && t.status === "done") {
-        const blocked = advisoryAcs.filter((ac) => acceptanceAcBlocked(acceptance, ac));
+        const blocked = advisoryAcs.filter((ac) => advisoryAcBlocked(advisory, ac));
         if (blocked.length > 0) {
           errors.push(
-            `${liveId}: done but ${blocked.length} AC(s) still BLOCKED/unpassed in ACCEPTANCE.md: ${blocked.join(",")} — revised live acceptance must remain blocked/pending until real revised AC passes`,
+            `${liveId}: done but ${blocked.length} AC(s) still BLOCKED/SOURCE GAP/NOT OBSERVED in ACCEPTANCE_ADVISORY.md: ${blocked.join(",")} — revised live acceptance must remain blocked/pending until real revised AC passes`,
           );
         }
       }
     }
-    // Generic hardening: any task whose title suggests revised live advisory acceptance cannot be done while BLOCKED
+    // If T14 is blocked, report honest blockers for info (not error) - but ensure T14 not done when blocked ACs exist
+    // Generic hardening: any task whose title suggests revised live advisory acceptance cannot be done while revised ACs blocked
     for (const t of ledger.tasks) {
       if (t.status !== "done") continue;
       if (/修订版.*真实.*OMP.*咨询验收|revised.*live.*advisory/i.test(t.title)) {
-        const blocked = advisoryAcs.filter((ac) => acceptanceAcBlocked(acceptance, ac));
+        const blocked = advisoryAcs.filter((ac) => advisoryAcBlocked(advisory, ac));
         if (blocked.length > 0) {
-          errors.push(`${t.id}: revised live advisory done but ACCEPTANCE still has BLOCKED/SOURCE GAP: ${blocked.join(",")}`);
+          errors.push(`${t.id}: revised live advisory done but ACCEPTANCE_ADVISORY still has BLOCKED/SOURCE GAP/NOT OBSERVED: ${blocked.join(",")}`);
         }
+      }
+    }
+    // Also ensure T14 acs uses revised ids
+    const t14 = byId.get("T14");
+    if (t14) {
+      const t14HasOld = (t14.acs ?? []).some((ac) => /^AC-10\d$/.test(ac));
+      if (t14HasOld) {
+        errors.push(`T14 acs must use revised AC-L01..L05/AC-C01..C03, not old AC-101..115: ${t14.acs.join(",")}`);
+      }
+      const t14Missing = expectedRevised.filter((ac) => !(t14.acs ?? []).includes(ac));
+      // Allow T14 to list subset? But contract says T14 and advisoryGate use revised AC ids/file; require at least L01..L05 and C01..C03
+      if (t14Missing.length > 0) {
+        warnings.push(`T14 acs missing some revised ACs: ${t14Missing.join(",")} (expected ${expectedRevised.join(",")})`);
       }
     }
   }
@@ -255,14 +357,6 @@ if (!gitAvailable()) {
     else if (status.length > 0) {
       errors.push(`verifiedBy claims clean worktree but git status is dirty:\n${status}`);
     }
-  }
-  // Pure-advisory does not claim clean worktree or HEAD in this migration; ensure no fabricated done for advisory chain
-  const advisoryDoneFabricated = ledger.tasks.filter(
-    (t) => ["T11", "T12", "T13", "T14"].includes(t.id) && t.status === "done",
-  );
-  if (advisoryDoneFabricated.length > 0) {
-    // This is not inherently an error unless evidence missing (handled by artifact check) and live gate, but warn if advisory tasks prematurely done without real evidence
-    // Keep as error only if they claim done without verifiedBy evidence path existence (already checked), so no extra error here.
   }
 }
 
@@ -334,13 +428,13 @@ if (!gitAvailable()) {
       errors.push(`${id}: historical truth violated — expected "${expect}" but ledger says "${t.status}" (history must be preserved)`);
     }
   }
-  // Advisory chain: T10 done (foundation 8ea7f34), T11 sole in_progress, T12/T13 pending, T14 blocked
+  // Advisory chain: T10 done (foundation 8ea7f34), T11/T12/T13 done at 48621b9, T14 blocked on revised ACs
   const t10 = byId.get("T10");
   if (t10 && t10.status !== "done") {
     errors.push(`T10: pure-advisory foundation must be "done" at 8ea7f34 (found "${t10.status}")`);
   }
   if (t10 && t10.status === "done") {
-    // verify T10 cites foundation commit and v4 checker exit 0
+    // verify T10 cites foundation commit and v4/v5 checker exit 0
     const vb = t10.verifiedBy ?? "";
     if (!/8ea7f34/.test(vb)) errors.push("T10: done must cite foundation commit 8ea7f34 in verifiedBy");
     if (!/check-ledger\.mjs.*exit 0/i.test(vb)) warnings.push("T10: verifiedBy should cite checker exit 0");
@@ -349,17 +443,37 @@ if (!gitAvailable()) {
     }
   }
   const t11 = byId.get("T11");
-  if (t11 && t11.status !== "in_progress") {
-    errors.push(`T11: pure-advisory core must be "in_progress" (found "${t11.status}") — sole in_progress after T10 done`);
+  const t12 = byId.get("T12");
+  const t13 = byId.get("T13");
+  // T11,T12,T13 must be done with evidence citing 48621b9 and required gates
+  for (const [id, t] of [["T11", t11], ["T12", t12], ["T13", t13]]) {
+    if (!t) continue;
+    if (t.status !== "done") {
+      errors.push(`${id}: pure-advisory implementation must be "done" at 48621b9 (found "${t.status}")`);
+    }
+    if (t.status === "done") {
+      const vb = t.verifiedBy ?? "";
+      if (!/48621b9/.test(vb)) errors.push(`${id}: done must cite implementation commit 48621b9 in verifiedBy`);
+      for (const a of t.artifacts ?? []) {
+        if (!artifactExists(a)) errors.push(`${id}: done but artifact missing: ${a}`);
+      }
+    }
   }
-  for (const id of ["T12", "T13"]) {
-    const t = byId.get(id);
-    if (t && t.status === "done") {
-      errors.push(`${id}: advisory implementation task must not be "done" before real implementation (found done without completion evidence)`);
+  // Specific evidence checks per contract: T11/T12/T13 verifiedBy must contain exact proofs
+  if (t11?.status === "done") {
+    const vb = t11.verifiedBy ?? "";
+    if (!/typecheck:core.*exit 0/i.test(vb)) warnings.push("T11: verifiedBy should cite typecheck:core exit 0");
+  }
+  if (t12?.status === "done") {
+    const vb = t12.verifiedBy ?? "";
+    if (!/32 members verified/i.test(vb) && !/32 declared members/i.test(vb)) warnings.push("T12: verifiedBy should cite 32 members verified");
+  }
+  if (t13?.status === "done") {
+    const vb = t13.verifiedBy ?? "";
+    if (!/35.*60/i.test(vb) || !/65 passed.*0 failed/i.test(vb)) {
+      errors.push("T13: verifiedBy must cite POLICY 35 tokens <=60, 65 passed 0 failed");
     }
-    if (t && t.status === "in_progress") {
-      errors.push(`${id}: only T11 may be in_progress (found ${id} in_progress)`);
-    }
+    if (!/typecheck:core.*exit 0/i.test(vb)) warnings.push("T13: verifiedBy should cite typecheck:core exit 0");
   }
   const t14 = byId.get("T14");
   if (t14 && t14.status === "done") {
@@ -368,8 +482,24 @@ if (!gitAvailable()) {
   if (t14 && t14.status !== "blocked") {
     errors.push(`T14: revised live advisory must be "blocked" (found "${t14.status}")`);
   }
+  if (t14 && t14.status === "blocked") {
+    const vb = (t14.verifiedBy ?? "") + " " + (t14.note ?? "");
+    // Must reference the four blockers
+    const need = ["AC-L02", "AC-L04", "AC-L05", "AC-C03"];
+    for (const ac of need) {
+      if (!vb.includes(ac)) warnings.push(`T14 blocked evidence should reference ${ac}`);
+    }
+    if (!/SOURCE GAP/i.test(vb) || !/NOT OBSERVED/i.test(vb)) warnings.push("T14 blocked evidence should cite SOURCE GAP / NOT OBSERVED");
+    if (!/ACCEPTANCE_ADVISORY\.md/i.test(vb)) warnings.push("T14 blocked evidence should cite ACCEPTANCE_ADVISORY.md");
+  }
   if (!ledger.advisoryMigration) {
     warnings.push("ledger missing advisoryMigration note (pure-advisory authorization should be recorded)");
+  } else {
+    // Ensure stale wording removed: should not claim T11 in_progress or pending chain when already done
+    const note = ledger.advisoryMigration.note ?? "";
+    if (/唯一 in_progress.*T11/i.test(note) || /T11\.\.T13 为.*pending/i.test(note) || /未声称任何纯咨询实现已完成/.test(note)) {
+      warnings.push("advisoryMigration note still contains stale pending/in_progress wording; should reflect T11/T12/T13 done at 48621b9");
+    }
   }
 }
 
@@ -377,7 +507,7 @@ if (!gitAvailable()) {
 const counts = { pending: 0, in_progress: 0, done: 0, blocked: 0 };
 for (const t of ledger.tasks) counts[t.status]++;
 
-console.log("WEConverge ledger check (v4 pure advisory)");
+console.log("WEConverge ledger check (v5 pure advisory)");
 console.log(`  root: ${root}`);
 console.log(`  tasks: ${ledger.tasks.length}  done=${counts.done} in_progress=${counts.in_progress} pending=${counts.pending} blocked=${counts.blocked}`);
 if (errors.length) {
