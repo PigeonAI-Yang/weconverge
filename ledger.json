@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "project": "WEConverge",
   "version": "1.0.0",
-  "updatedAt": "2026-08-20T14:35:28+08:00",
+  "updatedAt": "2026-08-20T15:10:00+08:00",
   "statusCorrection": {
     "date": "2026-08-20",
     "reason": "2026-08-19 验收结论 REJECTED：ACCEPTANCE/ledger 与现场证据不一致（错误完成声明/证据失真）。本段保留该历史纠偏及证据；当前修复后 T04/T05/T06/T08 已完成，T07 仍因 AC-101..115 的 BLOCKED/SOURCE GAP 保持 blocked，T09 在真实本地 commit 前保持 pending。",
@@ -13,9 +13,20 @@
       "历史 pre-fix：.workbuddy/ 未跟踪文件存在，T09 verifiedBy 所称工作树干净不成立"
     ]
   },
+  "advisoryMigration": {
+    "date": "2026-08-20",
+    "authority": "docs/spark/2026-08-20-weconverge-pure-advisory-design.md (Owner-approved pure advisory) + explicit Owner authorization for PLAN/ledger/checker migration",
+    "note": "历史 T01..T09 定性原样保留；T10 为本次纯咨询规划迁移（唯一 in_progress），T11..T13 为纯咨询实现 pending 链，T14 为修订版真实 OMP 咨询验收（blocked until revised AC passes）。未声称任何纯咨询实现已完成。",
+    "retiredEnforcement": "D-01..D-07 enforcement（task wrapper/block/mutation/cancel/auto-dispatch/preflight Max/wave/concurrency/duplicate/compact-output）显式退役为 advisory 观察；详见 pure-advisory design §13。"
+  },
   "acceptanceGate": {
     "realOmpAcs": ["AC-101", "AC-102", "AC-103", "AC-104", "AC-105", "AC-106", "AC-107", "AC-108", "AC-109", "AC-110", "AC-111", "AC-112", "AC-113", "AC-114", "AC-115"],
     "rule": "T07 保持 blocked，直到 AC-101..115 逐项具备真实 OMP PASS 证据或经 Owner 批准的 BLOCKED 定性；E-010 的 installed-junction Medium command/simple-task smoke 和机械测试不得替代真实读回。"
+  },
+  "advisoryGate": {
+    "liveTaskIds": ["T14"],
+    "realOmpAcs": ["AC-101", "AC-102", "AC-103", "AC-104", "AC-105", "AC-106", "AC-107", "AC-108", "AC-109", "AC-110", "AC-111", "AC-112", "AC-113", "AC-114", "AC-115"],
+    "rule": "修订版真实 OMP 咨询验收 T14 保持 blocked，直到修订版 ACCEPTANCE 对所列 AC 逐项具备真实 OMP PASS 证据；机械测试/旧 E-010 smoke 不得升格为 revised live done。"
   },
   "tasks": [
     {
@@ -85,7 +96,7 @@
       "acs": ["AC-101", "AC-102", "AC-103", "AC-104", "AC-105", "AC-106", "AC-107", "AC-108", "AC-109", "AC-110", "AC-111", "AC-112", "AC-113", "AC-114", "AC-115"],
       "deps": ["T06"],
       "status": "blocked",
-      "note": "AC-101..115 仍需逐项真实 OMP 证据或 Owner 批准的 bounded BLOCKED 定性。E-010（2026-08-20）仅证明 installed-junction discovery、non-Max Medium command/simple-task、命令/生命周期/零 child/cleanup smoke；AC-105/107/108 仍 BLOCKED，AC-104/106/109/110/111/112/115 仍 SOURCE GAP，SPEC §22 仍 NOT COMPLETE / REJECTED。",
+      "note": "AC-101..115 仍需逐项真实 OMP 证据或 Owner 批准的 bounded BLOCKED 定性。E-010（2026-08-20）仅证明 installed-junction discovery、non-Max Medium actual-route、命令/生命周期/零 child/cleanup smoke；AC-105/107/108 仍 BLOCKED，AC-104/106/109/110/111/112/115 仍 SOURCE GAP，SPEC §22 仍 NOT COMPLETE / REJECTED。",
       "verifiedBy": "ACCEPTANCE.md E-010 (2026-08-20): installed-junction OMP v17.3.8 command/simple-task smoke passed with actualModel=gpt-5.6-luna, actualEffort=medium, no extension load error, zero children, lifecycle/cleanup observed; AC-101..115 remain not-all-PASS (BLOCKED/SOURCE GAP), so T07 remains blocked.",
       "artifacts": ["extensions/weconverge(junction)", "ACCEPTANCE.md"]
     },
@@ -109,6 +120,58 @@
       "status": "pending",
       "note": "历史 b8159f3 在虚假状态下提交；最终本地 commit 仍 pending，须待 T07/T08 均 done 后执行，并在 commit 实际创建后验证工作树干净。无远端/push/发布。",
       "artifacts": []
+    },
+    {
+      "id": "T10",
+      "title": "纯咨询规划迁移 — PLAN/ledger/checker 按纯咨询权威校正",
+      "caps": ["CAP-013"],
+      "acs": [],
+      "deps": ["T08"],
+      "status": "in_progress",
+      "verifiedBy": "docs/spark/2026-08-20-weconverge-pure-advisory-design.md §13 D-01..D-07 显式退役；本任务为当前唯一 in_progress，不声称完成。证据：PLAN.md / ledger.json / scripts/check-ledger.mjs 已按纯咨询权威校正且 checker 通过。",
+      "artifacts": ["PLAN.md", "ledger.json", "scripts/check-ledger.mjs"],
+      "note": "Owner 于 2026-08-20 授权纯咨询实现；历史 T01..T09 定性原样保留，T10 作为当前准备任务推进，T11..T14 保持 pending/blocked 未完成态。"
+    },
+    {
+      "id": "T11",
+      "title": "实现纯咨询核心 — 移除 enforcement，仅保留咨询注入与观察",
+      "caps": ["CAP-005", "CAP-006", "CAP-007", "CAP-009", "CAP-011"],
+      "acs": [],
+      "deps": ["T10"],
+      "status": "pending",
+      "note": "移除 task wrapper/block/mutation/cancel/auto-dispatch/preflight Max 强制门；保留 before_agent_start ≤60 token 咨询注入与 observation-only 观察器（fail-open，≤5ms，无阻塞/变异）。",
+      "artifacts": []
+    },
+    {
+      "id": "T12",
+      "title": "实现纯咨询 OMP 接线 — before_agent_start 咨询注入 + 观察",
+      "caps": ["CAP-001", "CAP-002", "CAP-010", "CAP-012", "CAP-014"],
+      "acs": [],
+      "deps": ["T11"],
+      "status": "pending",
+      "note": "仅使用 before_agent_start systemPrompt、tool_call/tool_result/task:subagent:* 观察、appendEntry 审计；不调用 ctx.invokeTool(task)、不阻塞、不变异输入、不取消子任务。",
+      "artifacts": []
+    },
+    {
+      "id": "T13",
+      "title": "纯咨询机械验收 — 咨询契约分层验证",
+      "caps": ["CAP-013"],
+      "acs": [],
+      "deps": ["T11", "T12"],
+      "status": "pending",
+      "note": "mechanical 分层验证：策略注入有界性、fact taxonomy 隔离、observer fail-open、audit 脱敏与截断、单活运行时 + bounded tombstone；不声称真实 OMP 路由。",
+      "artifacts": []
+    },
+    {
+      "id": "T14",
+      "title": "修订版真实 OMP 咨询验收 — 观察路径 live 验证",
+      "caps": ["CAP-001", "CAP-014"],
+      "acs": ["AC-101", "AC-102", "AC-103", "AC-104", "AC-105", "AC-106", "AC-107", "AC-108", "AC-109", "AC-110", "AC-111", "AC-112", "AC-113", "AC-114", "AC-115"],
+      "deps": ["T13"],
+      "status": "blocked",
+      "note": "修订版真实 OMP 咨询验收保持 blocked，直到修订版 ACCEPTANCE 对所列 AC 逐项具备真实 OMP PASS 证据；机械测试/E-010 smoke 不得升格为 revised live done。当前 ACCEPTANCE.md 仍含 BLOCKED/SOURCE GAP，SPEC §22 仍 NOT COMPLETE / REJECTED。",
+      "verifiedBy": "ACCEPTANCE.md 现状：AC-105/107/108 BLOCKED，AC-104/106/109/110/111/112/115 SOURCE GAP，整体 NOT COMPLETE / REJECTED；T14 因此保持 blocked。",
+      "artifacts": ["ACCEPTANCE.md"]
     }
   ]
 }
