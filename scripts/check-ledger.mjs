@@ -334,20 +334,39 @@ if (!gitAvailable()) {
       errors.push(`${id}: historical truth violated — expected "${expect}" but ledger says "${t.status}" (history must be preserved)`);
     }
   }
-  // Advisory chain must be non-complete: T11..T13 must not be done, T14 must be blocked/pending, exactly one in_progress (T10)
+  // Advisory chain: T10 done (foundation 8ea7f34), T11 sole in_progress, T12/T13 pending, T14 blocked
   const t10 = byId.get("T10");
-  if (t10 && t10.status !== "in_progress") {
-    errors.push(`T10: pure-advisory preparation task must be "in_progress" (found "${t10.status}")`);
+  if (t10 && t10.status !== "done") {
+    errors.push(`T10: pure-advisory foundation must be "done" at 8ea7f34 (found "${t10.status}")`);
   }
-  for (const id of ["T11", "T12", "T13"]) {
+  if (t10 && t10.status === "done") {
+    // verify T10 cites foundation commit and v4 checker exit 0
+    const vb = t10.verifiedBy ?? "";
+    if (!/8ea7f34/.test(vb)) errors.push("T10: done must cite foundation commit 8ea7f34 in verifiedBy");
+    if (!/check-ledger\.mjs.*exit 0/i.test(vb)) warnings.push("T10: verifiedBy should cite checker exit 0");
+    for (const a of t10.artifacts ?? []) {
+      if (!artifactExists(a)) errors.push(`T10: done but artifact missing: ${a}`);
+    }
+  }
+  const t11 = byId.get("T11");
+  if (t11 && t11.status !== "in_progress") {
+    errors.push(`T11: pure-advisory core must be "in_progress" (found "${t11.status}") — sole in_progress after T10 done`);
+  }
+  for (const id of ["T12", "T13"]) {
     const t = byId.get(id);
     if (t && t.status === "done") {
       errors.push(`${id}: advisory implementation task must not be "done" before real implementation (found done without completion evidence)`);
+    }
+    if (t && t.status === "in_progress") {
+      errors.push(`${id}: only T11 may be in_progress (found ${id} in_progress)`);
     }
   }
   const t14 = byId.get("T14");
   if (t14 && t14.status === "done") {
     errors.push("T14: revised live advisory acceptance must remain blocked/pending until real revised AC passes (found done)");
+  }
+  if (t14 && t14.status !== "blocked") {
+    errors.push(`T14: revised live advisory must be "blocked" (found "${t14.status}")`);
   }
   if (!ledger.advisoryMigration) {
     warnings.push("ledger missing advisoryMigration note (pure-advisory authorization should be recorded)");

@@ -18,8 +18,8 @@ T06 运行机械验收 AC-001..044                (T04,T05)       → done   [te
 T07 安装 junction + 真实OMP报告              (T06)           → blocked [extensions/weconverge -> repo; ACCEPTANCE.md] AC-101..115
 T08 只读代码审查 + 修复                     (T06)           → done    [REVIEW.md] deterministic PASS; mechanical 210/210, extension integration 95/95, core+extension typecheck exit 0
 T09 本地提交                                 (T07,T08)       → pending
-T10 纯咨询规划迁移(PLAN/ledger/checker)      (T08)           → in_progress [PLAN.md, ledger.json, scripts/check-ledger.mjs] 纯咨询权威链与退役映射，不声称完成
-T11 实现纯咨询核心(策略注入/观察/audit)      (T10)           → pending [src/core/*, src/extension.ts] 移除 task wrapper/block/mutation
+T10 纯咨询规划迁移(PLAN/ledger/checker)      (T08)           → done [PLAN.md, ledger.json, scripts/check-ledger.mjs] 纯咨询权威链与退役映射，已于 8ea7f34 完成
+T11 实现纯咨询核心(策略注入/观察/audit)      (T10)           → in_progress [src/core/*, src/extension.ts] 移除 task wrapper/block/mutation
 T12 实现纯咨询 OMP 接线                      (T11)           → pending [src/extension.ts, types/omp-extension-api.d.ts] before_agent_start 咨询注入 + 观察
 T13 纯咨询机械验收                           (T11,T12)       → pending [test/mechanical.test.ts, test/extension.integration.test.ts] 咨询契约分层验证
 T14 修订版真实 OMP 咨询验收                  (T13)           → blocked [ACCEPTANCE.md 修订版] 需真实 OMP 回读，BLOCKED/SOURCE GAP 前保持 blocked
@@ -28,8 +28,8 @@ T14 修订版真实 OMP 咨询验收                  (T13)           → blocke
 > 2026-08-20 状态纠偏（Owner 批准）：历史 2026-08-19 验收 REJECTED 已保留在
 > ACCEPTANCE.md/ledger.json。当前 T04/T05/T06/T08 已按现有证据完成；T07 因
 > AC-101..115 仍含 BLOCKED/SOURCE GAP 保持 blocked；T09 继续 pending。
-> 一次只允许一个 in_progress；当前 T10 为唯一 in_progress，满足单任务进行中约束。
-> T11..T13 为纯咨询实现 pending 链，T14 为修订版真实 OMP 咨询验收，BLOCKED/SOURCE GAP 未消除前保持 blocked，不升格为 done。
+> T10 已于 commit 8ea7f34 完成（PLAN/ledger/checker 按纯咨询 §13 校正，v4 checker exit 0）；当前唯一 in_progress 为 T11，满足单任务进行中约束。
+> T12/T13 为纯咨询实现 pending 链，T14 为修订版真实 OMP 咨询验收，BLOCKED/SOURCE GAP 未消除前保持 blocked，不升格为 done。
 
 ## 每个任务的验收门槛
 
@@ -39,8 +39,8 @@ T14 修订版真实 OMP 咨询验收                  (T13)           → blocke
 - **T07**：E-001/E-010 证明 junction、installed discovery 与 non-Max Medium command/simple-task smoke；AC-101..115 仍含 BLOCKED/SOURCE GAP，T07 保持 blocked，不把 E-010 升格为完整 real-OMP acceptance。
 - **T08**：审查清单（禁区未改、无第二套调度、审计脱敏、幂等、恢复、Max 禁令）逐项核对；当前确定性源审查为 PASS，证据为 mechanical 210/210、extension integration 95/95、core+extension typecheck exit 0；real-OMP 限制仍归 T07。
 - **T09**：仓库工作树干净（仅本项目），已本地 commit；无远端/push/发布。仅在 T07/T08 均 done 后执行；提交前不得声称工作树干净或当前 HEAD 已满足。
-- **T10**：本文件、ledger.json 与 checker 已按 `docs/spark/2026-08-20-weconverge-pure-advisory-design.md` §13 显式退役/保留映射校正；历史 T01..T09 定性原样保留；新增 T11..T14 为 pending/blocked 未完成态；`node scripts/check-ledger.mjs` 通过且仅三文件变更。
-- **T11**：移除 `task` wrapper/block/mutation/cancel/auto-dispatch/preflight gating，保留 `before_agent_start` ≤60 token 咨询注入与 observation-only 观察器（fail-open ≤5ms）；不新增第二套调度；`types/omp-extension-api.d.ts` 仅同步公开 API。
+- **T10**：已完成（commit 8ea7f34）；本文件、ledger.json 与 checker 已按 `docs/spark/2026-08-20-weconverge-pure-advisory-design.md` §13 显式退役/保留映射校正；历史 T01..T09 定性原样保留；`node scripts/check-ledger.mjs` v4 exit 0 且仅三文件变更（PLAN.md, ledger.json, scripts/check-ledger.mjs）。
+- **T11**：当前唯一 in_progress；移除 `task` wrapper/block/mutation/cancel/auto-dispatch/preflight gating，保留 `before_agent_start` ≤60 token 咨询注入与 observation-only 观察器（fail-open ≤5ms）；不新增第二套调度；`types/omp-extension-api.d.ts` 仅同步公开 API；未声称完成。
 - **T12**：`src/extension.ts` 仅使用 `before_agent_start.systemPrompt`、`pi.on(tool_call/tool_result)`、`pi.events(task:subagent:*)`、`appendEntry` 观察路径；不调用 `ctx.invokeTool(task)`、不阻塞、不变异输入；命令 `on/off/status/reset` 仅为本地 advisory 状态。
 - **T13**：咨询契约机械验收分层通过：策略注入有界性、fact taxonomy (requested/expected/observed/inferred/source_gap) 隔离、observer fail-open、audit 脱敏与截断（≤200 chars）、单活运行时 + bounded tombstone 语义；不声称真实 OMP 路由。
 - **T14**：修订版真实 OMP 咨询验收仅在真实 OMP 证据齐全后方可 done；BLOCKED/SOURCE GAP 期间保持 blocked，不得将机械测试或 E-010 smoke 升格为 revised live acceptance。

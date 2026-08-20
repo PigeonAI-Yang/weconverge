@@ -127,10 +127,10 @@
       "caps": ["CAP-013"],
       "acs": [],
       "deps": ["T08"],
-      "status": "in_progress",
-      "verifiedBy": "docs/spark/2026-08-20-weconverge-pure-advisory-design.md §13 D-01..D-07 显式退役；本任务为当前唯一 in_progress，不声称完成。证据：PLAN.md / ledger.json / scripts/check-ledger.mjs 已按纯咨询权威校正且 checker 通过。",
+      "status": "done",
+      "verifiedBy": "commit 8ea7f34b7b86e47f8c632f067d3e9cae2cdd321b: PLAN.md + ledger.json + scripts/check-ledger.mjs migrated to pure-advisory (v4 checker); node scripts/check-ledger.mjs exit 0 (tasks:14 done=7 in_progress=1 pending=4 blocked=2 OK). docs/spark/2026-08-20-weconverge-pure-advisory-design.md §13 D-01..D-07.",
       "artifacts": ["PLAN.md", "ledger.json", "scripts/check-ledger.mjs"],
-      "note": "Owner 于 2026-08-20 授权纯咨询实现；历史 T01..T09 定性原样保留，T10 作为当前准备任务推进，T11..T14 保持 pending/blocked 未完成态。"
+      "note": "T10 done: foundation commit 8ea7f34 satisfied advisory migration; historical T01..T09 preserved, next chain T11 pending→in_progress."
     },
     {
       "id": "T11",
@@ -138,8 +138,9 @@
       "caps": ["CAP-005", "CAP-006", "CAP-007", "CAP-009", "CAP-011"],
       "acs": [],
       "deps": ["T10"],
-      "status": "pending",
-      "note": "移除 task wrapper/block/mutation/cancel/auto-dispatch/preflight Max 强制门；保留 before_agent_start ≤60 token 咨询注入与 observation-only 观察器（fail-open，≤5ms，无阻塞/变异）。",
+      "status": "in_progress",
+      "verifiedBy": "T10 done at 8ea7f34 (v4 checker exit 0); T11 now sole in_progress per PLAN dependency → in_progress.",
+      "note": "T11 in_progress: pure advisory core — remove task wrapper/block/mutation/cancel/auto-dispatch/preflight Max gating; keep before_agent_start ≤60 token advisory injection + observation-only observer (fail-open ≤5ms).",
       "artifacts": []
     },
     {
