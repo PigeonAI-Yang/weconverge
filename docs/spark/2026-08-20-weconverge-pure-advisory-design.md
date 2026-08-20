@@ -108,7 +108,7 @@ OMP Runtime (facts source)
 - Returns `BeforeAgentStartEventResult { systemPrompt: string[] }` when enabled.
 - Content is compact, bounded, English, and advisory: one directive, two bullet rules, and the literal `task(context, tasks:[≤2])` reference. Target ≤60 tokens.
 - Injection is advisory: the model may ignore it. No enforcement follows.
-- Generation-scoped injection: inject on `session_start` / `session_switch` and on `off→on` toggle; not on every `turn_start`. This bounds the per-turn token multiplier.
+- Generation-scoped injection event: injected once on `session_start` / `session_switch` and on `off→on` toggle (not on every `turn_start`). The resulting systemPrompt is included in every subsequent parent Provider request; target ≤60 tokens per parent Provider request. For T parent Provider requests worst-case added input ≤60×T absent provider prompt-cache discount; actual billed/cache behavior is SOURCE GAP.
 
 ### 4.2 Observer (`tool_call` / `tool_result` / `task:subagent:*` subscribers)
 
@@ -392,14 +392,14 @@ The parent model's input + output + reasoning tokens are the primary cost. Child
 
 ### 11.4 Bounded policy and advisory text
 
-- Policy injection is ≤60 tokens and generation-scoped (Section 4.1), not per-turn. At 25 turns this costs ~60 tokens total of injected context, not 25×60.
+- Policy injection targets ≤60 tokens per parent Provider request (generation-scoped injection event per Section 4.1). Injection frequency is once per generation; billing is per-request. For T parent Provider requests worst-case added input ≤60×T absent provider prompt-cache discount; actual billed/cache behavior is SOURCE GAP (no provider cache/discount claim).
 - Advisory guidance (status, audit truncation, progress handling) avoids re-injecting blocked reasons verbatim; blocked reasons are written to audit only, not echoed into the next system prompt.
 
 ### 11.5 What remains billed
 
 | Cost source | Billed to | Why advisory still respects it |
 |---|---|---|
-| Policy tokens (bounded, generation-scoped ≤60 tokens, injected once per generation per Section 4.1) | Parent input includes the injected policy each subsequent turn of that generation (amortized; not re-injected per turn) | Disclosed, consistent with Section 11.4 (60 total, not 25×60). |
+| Policy tokens (≤60 tokens per parent Provider request; generation-scoped injection event per Section 4.1) | Parent Provider input each request includes the policy; worst-case ≤60×T for T requests absent prompt-cache discount; actual billed/cache is SOURCE GAP | Injection event once per generation distinct from per-request billing. |
 | Probe synthesis (parent reasoning + task JSON) | Parent reasoning + output | Necessary parent cost; bounded by 2 probes per batch. |
 | Child execution and output | Provider-executed children; child output tokens returned as parent input on synthesis | Bounded only by the model's own batch size; advisory cannot guarantee child output length. |
 | Blocked or failed formal `weconverge_decide` | One parent tool call when the narrow path is used | Rare; not on normal exploration. |
@@ -503,7 +503,7 @@ Reference: `docs/audits/2026-08-20-weconverge-pure-extension-design-adversarial-
 | F-06 — Duplicate / reworded duplicate | Major — no evidence gate before Task | **Advisory.** Duplicate evidence is recorded with a canonical hash for audit correlation only; no block. |
 | F-07 — Recursive delegation / cost amplification | Major — unbounded nesting | **Contained by advisory perimeter.** Policy advises single-level probes; child inherits no special blocking, but advisory explicitly declares "no nested probes" as non-goal and records recursion as observed if it occurs without blocking. |
 | F-08 — Phantom `resolvedEffort` | Major — synthetic `relativeCostTier` masquerading as effort | **Fixed by taxonomy.** `inferred.relativeCostTier` always marked "not probative of actual Provider wire effort"; `observed.resolvedEffort` is `source_gap` until public. |
-| F-09 — Hidden main-model token costs (per-turn policy, retry loops, synthesis) | Major — undercounted overhead | **Bounded.** Generation-scoped ≤60-token policy; no block→retry loop; post-call synthesis size observed and truncated only in audit copy. |
+| F-09 — Hidden main-model token costs (per-turn policy, retry loops, synthesis) | Major — undercounted overhead | **Bounded (honest accounting).** ≤60 tokens per parent Provider request (generation-scoped injection event; per-request billing; worst-case ≤60×T for T requests absent prompt-cache discount; actual billed/cache is SOURCE GAP); no block→retry loop; post-call synthesis size observed and truncated only in audit copy. |
 | F-10 — Silent contract deletions | Major — SPEC deltas hidden | **Explicit.** Section 13 lists every retained vs retired clause; no hidden deletion remains. |
 
 ---
