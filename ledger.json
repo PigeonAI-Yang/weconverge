@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "project": "WEConverge",
   "version": "1.0.0",
-  "updatedAt": "2026-08-20T22:10:00+08:00",
+  "updatedAt": "2026-08-20T19:45:00+08:00",
   "statusCorrection": {
     "date": "2026-08-20",
     "reason": "2026-08-19 验收结论 REJECTED：ACCEPTANCE/ledger 与现场证据不一致（错误完成声明/证据失真）。本段保留该历史纠偏及证据；当前修复后 T04/T05/T06/T08 已完成，T07 仍因 AC-101..115 的 BLOCKED/SOURCE GAP 保持 blocked，T09 在真实本地 commit 前保持 pending。",
@@ -16,7 +16,7 @@
   "advisoryMigration": {
     "date": "2026-08-20",
     "authority": "docs/spark/2026-08-20-weconverge-pure-advisory-design.md (Owner-approved pure advisory) + explicit Owner authorization for PLAN/ledger/checker migration",
-    "note": "历史 T01..T09 定性原样保留；T10 规划迁移已于 8ea7f34 完成；T11/T12/T13 纯咨询实现已于 commit 48621b9 完成（npm run typecheck:core exit 0, npm run check:types 32 members verified, `node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/extension.integration.test.ts` → 110 passed 0 failed incl. AC-A18 deterministic official-hook handoff, POLICY 35 tokens ≤60），D-08 AC-L02 RETIRED → AC-A18；T14 修订版真实 OMP 咨询验收因 ACCEPTANCE_ADVISORY.md 中 AC-L04 NOT OBSERVED (PARTIAL)、AC-L05 SOURCE GAP、AC-C03 NOT OBSERVED 保持 blocked（AC-L02 已 RETIRED 排除）。",
+    "note": "历史 T01..T09 定性原样保留；T10 规划迁移已于 8ea7f34 完成；T11/T12/T13 纯咨询实现已于 commit 48621b9 完成（npm run typecheck:core exit 0, npm run check:types 32 members verified, `node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/extension.integration.test.ts` → 110 passed 0 failed incl. AC-A18 deterministic official-hook handoff, POLICY 35 tokens ≤60），D-08 AC-L02 RETIRED → AC-A18；T14 修订版真实 OMP 咨询验收因 ACCEPTANCE_ADVISORY.md 中 AC-L04 PASS, AC-L05 SOURCE GAP, AC-C03 NOT OBSERVED 保持 blocked（AC-L02 已 RETIRED 排除；AC-L04 now PASS via managed-terminal BoilingCheetah 39.2s public TUI, AC-L05/C03 remain).",
     "retiredEnforcement": "D-01..D-07 enforcement（task wrapper/block/mutation/cancel/auto-dispatch/preflight Max/wave/concurrency/duplicate/compact-output）显式退役为 advisory 观察；详见 pure-advisory design §13。"
   },
   "acceptanceGate": {
@@ -471,11 +471,11 @@
         "T13"
       ],
       "status": "blocked",
-      "note": "修订版真实 OMP 咨询验收保持 blocked，直到 ACCEPTANCE_ADVISORY.md 对 active 门 AC-L01/L03/L04/L05/C01/C02/C03 逐项具备真实 OMP PASS 证据（AC-L02 RETIRED per D-08, 排除）；机械测试/E-010 smoke 不得升格为 revised live done。当前 ACCEPTANCE_ADVISORY.md: AC-L04 NOT OBSERVED (PARTIAL), AC-L05 SOURCE GAP, AC-C03 NOT OBSERVED; AC-L01 PASS, AC-L03 PASS (with subfield SOURCE GAP), AC-C01 PASS, AC-C02 PASS, AC-A18 PASS; SPEC §22.2 NOT COMPLETE。",
-      "verifiedBy": "ACCEPTANCE_ADVISORY.md §0/§3/§4/§5/§8 (D-08): AC-A18 PASS (deterministic official-hook handoff, 110 passed) + AC-L04 NOT OBSERVED (PARTIAL, off without running child), AC-L05 SOURCE GAP (session_switch not exercised), AC-C03 NOT OBSERVED (child output length not observed); AC-L02 RETIRED (never PASS, not a product SOURCE GAP) per D-08 excluded; AC-L01 PASS, AC-L03 PASS (with subfield SOURCE GAP), AC-C01 PASS, AC-C02 PASS; live smoke docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md E-L01..E-L08 + D-08 postscript; therefore T14 remains blocked (3 active gates).",
+      "note": "修订版真实 OMP 咨询验收保持 blocked — ACCEPTANCE_ADVISORY.md 对 active 门 AC-L01/L03/L04/L05/C01/C02/C03 逐项具备真实 OMP 证据（AC-L02 RETIRED per D-08 排除）：AC-L01 PASS, AC-L03 PASS (subfield SOURCE GAP), AC-L04 PASS (managed-terminal BoilingCheetah 39.2s hub-managed PTY weconv-exec-A public TUI off while waiting 2.1s→disabled detached, same child completed size 262B len260), AC-L05 SOURCE GAP (no in-runtime session_switch via public TUI), AC-C01 PASS, AC-C02 PASS, AC-C03 NOT OBSERVED (no <=200 audit copy via public TUI), AC-A18 PASS; SPEC §22.2 NOT COMPLETE。私有的 session JSONL/config 读取已执行但为不可采信观察，已排除在 verdict 外（见报告）。",
+      "verifiedBy": "ACCEPTANCE_ADVISORY.md §0/§4/§5/§8 NOT COMPLETE: AC-L04 PASS (BoilingCheetah 39.2s public TUI off while waiting, same child completed size 262B len260), AC-L05 SOURCE GAP (no in-runtime session_switch), AC-C03 NOT OBSERVED (no <=200 audit copy), plus AC-L01 PASS, AC-L03 PASS, AC-C01 PASS, AC-C02 PASS, AC-A18 PASS (110 passed); live file docs/audits/2026-08-20-weconverge-managed-terminal-live-acceptance.md (public TUI only, private reads disclosed as inadmissible); therefore T14 remains blocked (2 active gates).",
       "artifacts": [
         "ACCEPTANCE_ADVISORY.md",
-        "docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md"
+        "docs/audits/2026-08-20-weconverge-managed-terminal-live-acceptance.md"
       ]
     }
   ]
