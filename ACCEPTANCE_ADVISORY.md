@@ -3,7 +3,7 @@
 > Authority: `docs/spark/2026-08-20-weconverge-pure-advisory-design.md` (Owner-approved 2026-08-20) + PRD v1.1.0-advisory §0/§13+ / SPEC v1.1.0-advisory §0/§13+ / TECHNICAL_DESIGN v1.1.0-advisory §0–12. Historical baseline v1.0.0 (2026-08-19) preserved in PRD/SPEC/TECHNICAL_DESIGN §1–12 and in `ACCEPTANCE.md` / `REVIEW.md` — not overwritten.
 > Scope: v1.1-advisory three-layer acceptance only: AC-A01..A17 (mechanical/deterministic), AC-L01..L05 (live/observed), AC-C01..C03 (cost/token-economics). Retired enforcement ACs are RETIRED, never PASS.
 > Evidence separation: deterministic (fake ExtensionAPI, no provider) ≠ live (real junction/OMP TUI) ≠ cost (token economics). Mechanical tests cannot prove live claims.
-> Date: 2026-08-20 (PigeonYang local, UTC+08). No source/test/ledger/contract/PLAN/checker edits by this report, no commands executed, no commit.
+> Date: 2026-08-20 (PigeonYang local, UTC+08). Report-generation provenance: this report's creation wrote only `ACCEPTANCE_ADVISORY.md` (no source/test/ledger/contract/PLAN/checker edits, no commands executed, no commit at creation). Repository disposition now: implementation committed at `48621b9af5c320a9ea842f2d328c33dc30edb96d` (23 paths), ledger finalized at `3957048f6851e38d8e86ff7a965c19e874d25998` (`PLAN.md`, `ledger.json`, `scripts/check-ledger.mjs`), worktree clean except ignored `.workbuddy`.
 
 ---
 
@@ -21,19 +21,29 @@
 
 ---
 
-## 1. Implementation changed paths — exact
+## 1. Implementation changed paths — exact (committed at 48621b9)
 
-This report writes only `ACCEPTANCE_ADVISORY.md`. The implementation delta it observes is the existing working-tree delta relative to `HEAD` at `24897e6` (PLAN ledger-checker v4 + T10 done at `8ea7f34`). No commit was created by this report.
+Report-generation provenance: this report's creation wrote only `ACCEPTANCE_ADVISORY.md` (no source/test/ledger/contract/PLAN/checker edits, no commands executed, no commit at creation). Repository disposition now: implementation committed at `48621b9af5c320a9ea842f2d328c33dc30edb96d` (23 exact paths vs `24897e6`), ledger finalized at `3957048f6851e38d8e86ff7a965c19e874d25998`, worktree clean except ignored `.workbuddy`.
 
-Tracked modified (staged/unstaged diff vs HEAD):
+Committed advisory implementation (`48621b9af5c320a9ea842f2d328c33dc30edb96d`, 23 paths, diff `24897e6..48621b9`):
 
+- `ACCEPTANCE_ADVISORY.md` — this advisory acceptance report (new file)
 - `PRD.md` — advisory migration §0 + §13+ (RETIRED mapping, REQ-100..115)
 - `SPEC.md` — advisory §§0, 13.1–13.8, 20.2, 22.2 (CAP-A01..A11, AC-A/L/C, retired list)
 - `TECHNICAL_DESIGN.md` — advisory §§0–12 (single active runtime + bounded tombstones, ≤60 token policy, observation-only wiring)
+- `docs/audits/2026-08-20-omp-capability-audit.md` — capability audit (CP-001..010)
+- `docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md` — corrected live smoke (E-L01..E-L08)
+- `docs/audits/poc-20260820/poc-real-decide-evidence.jsonl` — POC fixture (not acceptance evidence)
+- `docs/audits/poc-20260820/poc-task-wrapper-evidence.jsonl` — POC fixture (not acceptance evidence)
+- `docs/audits/poc-20260820/session-01a01e52-task-lo.jsonl` — POC fixture (not acceptance evidence)
+- `docs/audits/poc-20260820/session-01a01e5a-real-decide.jsonl` — POC fixture (not acceptance evidence)
+- `scripts/poc-task-wrapper.extension.mjs` — POC extension probe (not acceptance evidence)
 - `src/core/audit.ts`
 - `src/core/cost.ts`
 - `src/core/decision.ts`
 - `src/core/index.ts`
+- `src/core/observation.ts` — `classifyRequested/Expected/Observed/Inferred`, `withFailOpen`
+- `src/core/policy.ts` — `POLICY_BLOCK` + `countPolicyTokens()` (≤60 tokens, measured)
 - `src/core/route.ts`
 - `src/core/state.ts`
 - `src/core/status.ts`
@@ -41,20 +51,13 @@ Tracked modified (staged/unstaged diff vs HEAD):
 - `src/extension.ts` — advisory wiring: `before_agent_start` policy, `tool_call`/`tool_result`/`task:subagent:*` observation, `weconverge_decide` narrowed, single active runtime + tombstones
 - `test/mechanical.test.ts` — advisory mechanical fixtures (policy bounded, taxonomy, fail-open, etc.)
 
-Untracked advisory additions (not yet committed, observed via `git status --short`):
+Ledger finalization committed at `3957048f6851e38d8e86ff7a965c19e874d25998` (3 paths: `PLAN.md`, `ledger.json`, `scripts/check-ledger.mjs`) — see §10.
 
-- `src/core/policy.ts` — `POLICY_BLOCK` + `countPolicyTokens()` (≤60 tokens, measured)
-- `src/core/observation.ts` — `classifyRequested/Expected/Observed/Inferred`, `withFailOpen`
-- `docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md` — corrected live smoke (E-L01..E-L08)
-- `docs/audits/2026-08-20-omp-capability-audit.md` — capability audit (CP-001..010)
-- `docs/audits/poc-20260820/` — POC fixtures (not acceptance evidence)
-- `scripts/poc-task-wrapper.extension.mjs` — POC extension probe (not acceptance evidence)
-
-Preserved (not modified by this report):
+Preserved (not modified by this report's creation; historical states retained):
 
 - `ACCEPTANCE.md` — historical v1.0.0 NOT COMPLETE / REJECTED (AC-101..115 with BLOCKED/SOURCE GAP)
 - `REVIEW.md` — T08 deterministic PASS with live BLOCKED/SOURCE GAP retained
-- `ledger.json`, `PLAN.md`, `scripts/check-ledger.mjs` — advisory migration already at `8ea7f34`/`24897e6`
+- `ledger.json`, `PLAN.md`, `scripts/check-ledger.mjs` — advisory migration at `8ea7f34`/`24897e6` superseded by committed finalization at `3957048` (T11/T12/T13 done, T14 blocked)
 
 Forbidden zones untouched: `J:\OhMyPi\data\.omp\agent\config.yml`, credentials, OMP core, WeOMP.
 
@@ -203,18 +206,18 @@ These remain SOURCE GAP per design and live smoke — not failures, not synthesi
 
 ---
 
-## 10. Ledger recommendations after the implementation commit exists — T11/T12/T13/T14 (advisory, no ledger edit)
+## 10. Ledger final states — T11/T12/T13/T14 (committed at 3957048)
 
-This report does **not** edit `ledger.json` (per contract). The following are truthful recommendations for after the implementation working-tree delta is committed. A commit alone does not create live evidence.
+Report-generation provenance: this report's creation did **not** edit `ledger.json` (per contract). Repository disposition now: ledger finalized at `3957048f6851e38d8e86ff7a965c19e874d25998` (`PLAN.md`, `ledger.json`, `scripts/check-ledger.mjs`) records T11 done, T12 done, T13 done, T14 blocked. A commit alone does not create live evidence.
 
-| Ledger task | Current ledger status | Recommendation after the advisory implementation commit (working tree as observed in §1) |
+| Ledger task | Final ledger status at 3957048 | Evidence (committed) |
 |---|---|---|
-| **T11** `实现纯咨询核心 — 移除 enforcement，仅保留咨询注入与观察` (`deps:[T10]`, `caps CAP-005/006/007/009/011`) | `in_progress` (sole in_progress per `PLAN.md:31`) | Recommend **done** only after a commit that includes `src/core/{policy,observation,types,state,decision,audit,config,route,cost,status}.ts` + `src/extension.ts` advisory wiring and a clean `npm run typecheck:core` exit 0 (`tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.extension.json`, 2.46s) with no forbidden-zone diff. The delta already observed satisfies the code shape; commitment is the remaining ledger action. Until the commit exists, keep `in_progress`. |
-| **T12** `实现纯咨询 OMP 接线 — before_agent_start 咨询注入 + 观察` (`deps:[T11]`, `caps CAP-001/002/010/012/014`) | `pending` | Recommend **done** once T11 is committed and the same commit contains the `before_agent_start` `systemPrompt` path, `pi.on(tool_call/tool_result)` + `pi.events(task:subagent:*)` observation-only subscriptions, `weconverge_decide` narrow gate, and bounded tombstone wiring with `scripts/sync-omp-types.mjs → OK 32 declared members`. The current wiring already matches; recommend `in_progress → done` only after T11 commit, not by advancing without T11. |
-| **T13** `纯咨询机械验收 — 咨询契约分层验证` (`deps:[T11,T12]`) | `pending` | Recommend **done** once committed implementation yields `node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/mechanical.test.ts` → `POLICY tokens=35 budget=60; 65 passed, 0 failed` (or any run with `tokens ≤60` and `failed==0`) and `node scripts/check-ledger.mjs` exit 0. The supplied `65 passed, 0 failed` already proves deterministic layer; after commit it becomes the verifiable gate. Do not use this mechanical pass to claim any AC-L live gate. |
-| **T14** `修订版真实 OMP 咨询验收 — 观察路径 live 验证` (`deps:[T13]`, `caps CAP-001/014`, `acs AC-101/102/103/104/105/106/107/108/109/110/111/112/113/114/115` per ledger) — maps to advisory AC-L01..L05 / AC-C01..C03 | `blocked` | Recommend **remain blocked** until a future revised live smoke closes AC-L02, AC-L04 (running-child), AC-L05 (`session_switch`), and AC-C03 with observed evidence as listed in §8. The current corrected smoke (`docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md`) leaves AC-L02 SOURCE GAP, AC-L04 NOT OBSERVED (PARTIAL), AC-L05 SOURCE GAP, AC-C03 NOT OBSERVED — therefore not all AC-L/AC-C pass. Mechanical `65/65` and E-010 style smoke must not be promoted to revised live done. When live gates do close, T14 transitions `blocked → in_progress → done` only with an updated `ACCEPTANCE_ADVISORY.md` and `ledger.json` entry referencing the exact hub log cursor and status JSONs. |
+| **T11** `实现纯咨询核心 — 移除 enforcement，仅保留咨询注入与观察` (`deps:[T10]`, `caps CAP-005/006/007/009/011`) | **done** | Commit `48621b9af5c320a9ea842f2d328c33dc30edb96d`: `src/core/{policy,observation,types,state,decision,audit,config,route,cost,status}.ts` + `src/extension.ts` advisory wiring; `npm run typecheck:core` exit 0 (`tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.extension.json`, 2.46s); `npm run check:types` 32 members verified; `src/core/policy.ts` 33 tokens (mechanical 35 ≤60); no forbidden-zone diff. Finalized in `3957048` (`ledger.json:142-144 verifiedBy`). |
+| **T12** `实现纯咨询 OMP 接线 — before_agent_start 咨询注入 + 观察` (`deps:[T11]`, `caps CAP-001/002/010/012/014`) | **done** | Commit `48621b9`: `before_agent_start` `systemPrompt` generation-scoped path, `pi.on(tool_call/tool_result)` + `pi.events(task:subagent:*)` observation-only subscriptions, `weconverge_decide` narrow gate, bounded tombstone wiring; `scripts/sync-omp-types.mjs → OK 32 declared members`. Finalized in `3957048` (`ledger.json:152-154 verifiedBy`). |
+| **T13** `纯咨询机械验收 — 咨询契约分层验证` (`deps:[T11,T12]`) | **done** | Commit `48621b9`: `node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/mechanical.test.ts` → `POLICY tokens=35 budget=60; 65 passed, 0 failed` (`tokens ≤60`, `failed==0`) and `node scripts/check-ledger.mjs` exit 0. Deterministic layer proven; not used to claim any AC-L live gate. Finalized in `3957048` (`ledger.json:162-164 verifiedBy`). |
+| **T14** `修订版真实 OMP 咨询验收 — 观察路径 live 验证` (`deps:[T13]`, `caps CAP-001/014`, `acs AC-L01..L05/AC-C01..C03`) | **blocked** | Remains **blocked** — `ACCEPTANCE_ADVISORY.md` §4/§5/§8: `AC-L02 SOURCE GAP`, `AC-L04 NOT OBSERVED (PARTIAL)`, `AC-L05 SOURCE GAP`, `AC-C03 NOT OBSERVED`; `AC-L01 PASS`, `AC-L03 PASS (with subfield SOURCE GAP)`, `AC-C01 PASS`, `AC-C02 PASS`; `SPEC §22.2 NOT COMPLETE`. Current corrected smoke (`docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md` E-L01..E-L08) does not close the four gaps; mechanical `65/65` and E-010 style smoke not promoted to revised live done. When live gates close, T14 transitions `blocked → in_progress → done`. Finalized in `3957048` (`ledger.json:172-175 note/verifiedBy`, `PLAN.md:25`). |
 
-No ledger file was modified. `PLAN.md` dependency rule (one `in_progress` at a time, `T11 → T12 → T13 → T14`) is respected in these recommendations.
+No ledger file was modified by this report's creation; ledger finalization is committed at `3957048`. `PLAN.md` dependency rule (one `in_progress` at a time, `T11 → T12 → T13 → T14`) is satisfied in the committed state (zero `in_progress`, T11/T12/T13 done, T14 blocked).
 
 ---
 
@@ -262,16 +265,7 @@ npm run typecheck:core        # → exit 0, 2.46s (both tsconfigs)
 # Note: `npm run typecheck` (no such script) fails `Missing script: \"typecheck\"` — invocation mistake, not product failure; correct script is `typecheck:core`.
 
 # 5) Forbidden-zone check
-git diff --name-only | findstr /V "ACCEPTANCE_ADVISORY.md docs/audits"
-# → no OMP core / WeOMP / config.yml / credential diff (REVIEW §border, E-L01)
-
-# Evidence paths
-#   Repo authority: J:\PigeonYang\tools\weconverge
-#   Implementation: src/core/{policy,observation,types,state,decision,audit,route,cost,status,commands,evidence,ids,ledger,config}.ts, src/extension.ts, index.ts
-#   Tests: test/mechanical.test.ts (65 passed), test/extension.integration.test.ts (integration, not live)
-#   Live audit: docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md (E-L01..E-L08)
-#   Historical: ACCEPTANCE.md (REJECTED), REVIEW.md (T08 PASS deterministic-only), CAPABILITY_PROBE.md
-#   Ledger: ledger.json (T11 in_progress, T12 pending, T13 pending, T14 blocked), PLAN.md, scripts/check-ledger.mjs
+#   Ledger: ledger.json (T11 done, T12 done, T13 done, T14 blocked — committed at 3957048), PLAN.md, scripts/check-ledger.mjs
 ```
 
 No polling loops, no retries, no second `task` wave, no provider price claim.
@@ -280,17 +274,17 @@ No polling loops, no retries, no second `task` wave, no provider price claim.
 
 ## 13. Final completion verdict
 
-**WEConverge v1.1-advisory is NOT COMPLETE.** All advisory mechanical (AC-A01..A17) and cost (AC-C01/C02) are PASS with deterministic evidence `65 passed, 0 failed, POLICY 35 ≤ 60`. Live gates AC-L01 and AC-L03 are PASS with honest subfield SOURCE GAP. AC-L02 and AC-L05 remain SOURCE GAP, AC-L04 remains NOT OBSERVED (PARTIAL), AC-C03 remains NOT OBSERVED, and no retired AC has been marked PASS. The strongest honest end-to-end path is the `on → single native task[2] → off → cleanup` chain described in §7. The remaining live gates are enumerated in §8 and cannot be closed by mechanical results. `ledger.json` is not edited by this report; §10 recommends ledger progression only after the implementation commit and a future live smoke that closes AC-L02/L04/L05 and AC-C03. Owner final acceptance remains open.
+**WEConverge v1.1-advisory is NOT COMPLETE.** All advisory mechanical (AC-A01..A17) and cost (AC-C01/C02) are PASS with deterministic evidence `65 passed, 0 failed, POLICY 35 ≤ 60`. Live gates AC-L01 and AC-L03 are PASS with honest subfield SOURCE GAP. AC-L02 and AC-L05 remain SOURCE GAP, AC-L04 remains NOT OBSERVED (PARTIAL), AC-C03 remains NOT OBSERVED, and no retired AC has been marked PASS. The strongest honest end-to-end path is the `on → single native task[2] → off → cleanup` chain described in §7. The remaining live gates are enumerated in §8 and cannot be closed by mechanical results. `ledger.json` finalized at `3957048` (§10) records T11/T12/T13 done and T14 blocked (AC-L02 SOURCE GAP, AC-L04 NOT OBSERVED (PARTIAL), AC-L05 SOURCE GAP, AC-C03 NOT OBSERVED); a future live smoke closing AC-L02/L04/L05 and AC-C03 is required before T14 can progress.
 
 ---
 
 ## 14. Closing — cleanup / source-gap / no overclaim
 
-This report wrote exactly one file: `J:\PigeonYang\tools\weconverge\ACCEPTANCE_ADVISORY.md`. Historical `ACCEPTANCE.md` and `REVIEW.md` were read but not modified. No source, test, contract, `PLAN.md`, `ledger.json`, or `scripts/check-ledger.mjs` edit was performed, no command was executed, no provider was called, no OMP core/WeOMP/config/credential was changed, and no commit was created.
+Report-generation provenance: this report's creation wrote exactly one file — `J:\PigeonYang\tools\weconverge\ACCEPTANCE_ADVISORY.md` (and `docs/audits/2026-08-20-weconverge-pure-advisory-live-smoke.md` via the live smoke, not this report). Historical `ACCEPTANCE.md` and `REVIEW.md` were read but not modified at creation. No source, test, contract, `PLAN.md`, `ledger.json`, or `scripts/check-ledger.mjs` edit was performed by this report's creation, no command was executed, no provider was called, no OMP core/WeOMP/config/credential was changed, and no commit was created at that time. Repository disposition now: implementation committed at `48621b9af5c320a9ea842f2d328c33dc30edb96d` (23 paths, §1), ledger finalized at `3957048f6851e38d8e86ff7a965c19e874d25998` (T11 done, T12 done, T13 done, T14 blocked, §10), worktree clean except ignored `.workbuddy`.
 
 Known SOURCE GAPs are retained honestly (no synthesis): `resolvedEffort` always `source_gap`, per-request `systemPrompt` payload not exposed, per-child `resolvedModel` not rendered in this transcript, pre-provider non-Max proof unavailable, provider price/billing/quota unavailable, public `session-delete` unavailable. Mechanical `65 passed, 0 failed` does not prove live behavior; live E-L01..E-L08 does not prove deterministic taxonomy in isolation; both layers are required and kept separate.
 
-The next verifiable step is committing the observed implementation delta (§1), running the mechanical and typecheck commands in §12 to lock T11..T13, and running a two-generation live smoke that exercises `session_switch` and a running-child `off` to close AC-L02/L04/L05 and AC-C03 before proposing T14.
+The next verifiable step is a two-generation live smoke that exercises `session_switch` and a running-child `off` to close AC-L02/L04/L05 and AC-C03 before proposing T14 (`blocked → in_progress → done`). Implementation (§1 at `48621b9`) and ledger finalization (§10 at `3957048`) are already committed; mechanical/typecheck evidence is locked at `48621b9` and ledger gate `SPEC §22.2 NOT COMPLETE` remains per §13.
 
 *Report produced by ConsolidateAdvisoryAcceptance (Advise-only, 2026-08-20) — pure-advisory acceptance layer; historical REJECTED/NOT-COMPLETE verdicts preserved; no placeholder, no overclaim.*
 
