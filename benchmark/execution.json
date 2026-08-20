@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "model": "cockpit-gpt/gpt-5.6-sol",
+  "effort": "medium",
+  "thinking": "medium",
+  "max_time": "30m",
+  "control_max_time": "20s",
+  "approval_mode": "yolo",
+  "auto_approve": true,
+  "extension": "J:/PigeonYang/tools/weconverge/index.ts",
+  "extension_path": "J:/PigeonYang/tools/weconverge/index.ts",
+  "control_sequence": ["off", "on", "reset"],
+  "control_commands": [
+    "omp -p --no-session --model cockpit-gpt/gpt-5.6-sol --thinking medium --max-time 20s --no-skills --no-rules --no-extensions --extension J:/PigeonYang/tools/weconverge/index.ts \"/weconverge off\"",
+    "omp -p --no-session --model cockpit-gpt/gpt-5.6-sol --thinking medium --max-time 20s --no-skills --no-rules --no-extensions --extension J:/PigeonYang/tools/weconverge/index.ts \"/weconverge on\"",
+    "omp -p --no-session --model cockpit-gpt/gpt-5.6-sol --thinking medium --max-time 20s --no-skills --no-rules --no-extensions --extension J:/PigeonYang/tools/weconverge/index.ts \"/weconverge reset\""
+  ],
+  "trial_command_template": "omp -p --no-session --model cockpit-gpt/gpt-5.6-sol --thinking medium --max-time 30m --auto-approve --approval-mode yolo --no-extensions --extension J:/PigeonYang/tools/weconverge/index.ts @<PROMPT.md>",
+  "trial_command_cwd": "benchmark/runs/<run_id>/repo",
+  "continuation_policy": "continue_after_trial_failure_record_and_continue_stop_only_on_controller_invariant",
+  "schedule_sha256": "93e2cacdad41ac568e0540feb119a9d94a6ab6f3f8e576472801bf4a1b54e8f1",
+  "corpus_sha256": "774d00153e60ce4f630508a5d60e64042d396610c0e8177eee7a43904ea61011",
+  "schedule_total_runs": 40,
+  "first_run": {
+    "run_id": "run-641b399e",
+    "instance_id": "pytest-dev__pytest-10051",
+    "arm": "ON",
+    "model": "cockpit-gpt/gpt-5.6-sol",
+    "effort": "medium",
+    "thinking": "medium",
+    "exit_code": 0,
+    "duration_ms": 265000,
+    "final_answer_sha256": "1fb221c46caab815935add1022e85716e98d18658dc7074fd9b9fca23329df47",
+    "patch_sha256": "4dfdf3f827197cb7e967181fe19236fc23f058b17e3fb89ac6ab848dcba724d5",
+    "git_head": "aa55975c7d3f6c9f6d7f68accc41bb7cadf0eb9a",
+    "final_answer_path": "benchmark/runs/run-641b399e/final-answer.txt",
+    "patch_path": "benchmark/runs/run-641b399e/patch.diff"
+  },
+  "created_at": "2026-08-20T12:40:00Z",
+  "notes": "execution config immutable; trial runs under OMP hub managed process supervision; no new dependencies; no corpus/schedule mutation; no test/gold patch exposure; no provider calls in capture task"
+}

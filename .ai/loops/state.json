@@ -2,7 +2,7 @@
   "loop": "weconverge-benchmark-bootstrap",
   "date": "2026-08-20",
   "purpose": "determine whether WEConverge materially improves final code-repair quality",
-  "status": "bootstrapped",
+  "status": "executor_ready",
   "provenance": {
     "source": "princeton-nlp/SWE-bench_Verified",
     "revision": "c104f840cc67f8b6eec6f759ebc8b2693d585d4a",
@@ -31,14 +31,44 @@
     "algorithm": "mulberry32 Fisher-Yates with trial offset seed+attempt*1009 until no adjacent instance_id (attempt 55); opaque via mulberry32(20260821)",
     "total_runs": 40,
     "balance": "10x ON*2 OFF*2",
-    "opaque_format": "run-<8hex>"
+    "opaque_format": "run-<8hex>",
+    "sha256": "93e2cacdad41ac568e0540feb119a9d94a6ab6f3f8e576472801bf4a1b54e8f1"
+  },
+  "execution": {
+    "config": "benchmark/execution.json",
+    "model": "cockpit-gpt/gpt-5.6-sol",
+    "effort": "medium",
+    "thinking": "medium",
+    "max_time": "30m",
+    "control_max_time": "20s",
+    "approval_mode": "yolo",
+    "extension": "J:/PigeonYang/tools/weconverge/index.ts",
+    "control_sequence": ["off", "on", "reset"],
+    "continuation_policy": "continue_after_trial_failure_record_and_continue_stop_only_on_controller_invariant",
+    "schedule_sha256": "93e2cacdad41ac568e0540feb119a9d94a6ab6f3f8e576472801bf4a1b54e8f1",
+    "first_run": {
+      "run_id": "run-641b399e",
+      "instance_id": "pytest-dev__pytest-10051",
+      "arm": "ON",
+      "exit_code": 0,
+      "duration_ms": 265000,
+      "final_answer_sha256": "1fb221c46caab815935add1022e85716e98d18658dc7074fd9b9fca23329df47",
+      "patch_sha256": "4dfdf3f827197cb7e967181fe19236fc23f058b17e3fb89ac6ab848dcba724d5",
+      "git_head": "aa55975c7d3f6c9f6d7f68accc41bb7cadf0eb9a",
+      "patch_bytes": 1937,
+      "final_answer_bytes": 749
+    }
   },
   "gates": {
     "corpus": "pass",
     "schedule": "pass",
     "controller": "pass",
     "verifier": "pass",
-    "stage_smoke": "pass"
+    "stage_smoke": "pass",
+    "execution_config": "pass",
+    "executor": "pass",
+    "capture": "pass",
+    "resume": "pass"
   },
   "permissions": {
     "no_new_dependencies": true,
