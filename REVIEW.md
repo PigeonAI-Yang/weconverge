@@ -1,5 +1,11 @@
 # WEConverge v1 — Code Review (T08, read-only gate)
 
+> **2026-08-20：本审查结论作废。** v1 审查漏报两个 P0 级事实：(1) `src/extension.ts`
+> 模块级函数引用裸 `pi`，真实 OMP 下 `/weconverge status` 报
+> `Extension "command:weconverge" error: pi is not defined`；(2) `tsc --noEmit -p
+> tsconfig.core.json` 当时即失败（18 错误，含 src/core 3 个），"核心编译通过"不成立。
+> 以下清单仅作历史记录；T08 已回到 pending，修复完成后重新审查。
+
 Scope: `src/core/*`, `src/extension.ts`, `index.ts`, `test/mechanical.test.ts`.
 Method: read-only source re-inspection against SPEC §9–§15 and the AC-001..044 /
 AC-101..115 contracts. No behavioral change was required by this pass; the two

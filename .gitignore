@@ -1,0 +1,4 @@
+# Runtime/generated artifacts (harness memory, dependencies, generated types)
+.workbuddy/
+node_modules/
+types/omp-generated/

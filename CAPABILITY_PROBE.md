@@ -107,6 +107,10 @@
 - `modelRoles.default/.../ = :max`、`task = :xhigh` 且 `@task` 覆盖 `scout/sonic/designer/reviewer/task`：便宜角色实际解析为 **xhigh**，不是廉价 → `relativeCostTier` 配置值与真实 effort 不一致，印证 SPEC §13 警告；自动派发若映射到 `:max` 角色则必须拒绝（REQ-042），但本配置下 SPEC 默认能力映射到 xhigh（≤xhigh 合法）。
 - 自动真实 route 中无 Max：WEConverge 主会话 effort 由自身设定为 medium/high/xhigh，绝不 max（REQ-032 满足）。child 自动路由因 CP-003/CP-004 不可证明，保持 BLOCKED，不伪造 PASS。
 
-### 关于"本沙箱能否驱动真实 OMP smoke"
+### 关于"本沙箱能否驱动真实 OMP smoke"（2026-08-20 更正）
 
-本代理运行环境为无头 Bash/Node 沙箱，**没有可驱动的 OMP 桌面运行时**（需 Bun/Rust 构建的 `pi-coding-agent` + 真实 Provider 模型调用）。真实模型调用既不可行也会触碰 Max 成本陷阱。因此 AC-101..115（真实 OMP smoke）在"读回真实父子链/resolved route/恢复"维度**环境级 BLOCKED**，不伪造。详见 `ACCEPTANCE.md`。
+2026-08-19 版此处断言"没有可驱动的 OMP 桌面运行时"——**作废**。更正后事实：
+`J:\OhMyPi\bin\omp.exe` v17.3.7 存在且可驱动；非 TTY 下以消息为空启动会以退出码 129
+退出（无 TTY 的交互模式退出，非 extension 崩溃）；PTY 下 TUI 正常启动、加载 extension
+并可执行 `/weconverge` 命令。真实 smoke 应使用隔离 profile（`--profile`）+ 显式非 Max
+thinking level + 最小 prompt 执行，见 ACCEPTANCE.md 重验计划。
