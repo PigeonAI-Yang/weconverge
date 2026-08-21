@@ -30,10 +30,9 @@ WEConverge 是运行在 [Oh My Pi (OMP)](https://github.com/canis-aur/oh-my-pi) 
 * **显式收敛动作**：遇到阻碍时，必须提交明确的调度决策（如切换备选方案、派发轻量探路 Agent、引入专业审核角色或报告 SOURCE GAP）。每一次算力提升都必须说明“预期获得什么新信息”。
 
 ### 3. 按模型和角色判断成本，不把 Max 一刀切
-* **父会话梯阶**：仅 `weconverge_decide` 的 `raise_effort` 走 `Medium → High → XHigh` 逐级提升，`Max` 不是该梯阶的目标；这是父模型自身思考深度的纪律，不设需要用户审批的流程。
-* **子任务 Max 仅观察不阻断**：父模型通过原生 OMP `task` 派发的子代理/子任务若路由到 `Max`（例如 Kimi K3 Max 作为日常档位），属于按模型和角色区分的正常选项，WEConverge 仅记录为 `observedIsMax: true` 的咨询标注，不在执行前拒绝、不改写、不取消。
-* **模型感知、无全局禁令**：成本判断以 `modelRoles` / `task.agentModelOverrides` 等实际路由为准，不把标签为 `Max` 的路由一刀切；无前置 token/额度消耗预估，无全局 Max 禁令，用户通过 OMP 自行选择的模型/思考强度不受此梯阶限制。
-
+* **父会话可配置阶梯**：`weconverge_decide` 的 `raise_effort` 按 `settings.json` 中 `effortPolicies` 的按模型阶梯逐级提升（键精确为 `effortPolicies.rules[].match` / `rules[].automaticEfforts` / `default.automaticEfforts`，有序首匹配、大小写敏感全量 glob 仅 `*`/`?`、effort 后缀剥离；未配置时走内置兼容 `Medium → High → XHigh`；已配置且显式包含 `max` 时可自动升至 `max`，否则不自动至 `max`）。每次仅升至已配置的下一阶，且执行后立即读回实际 effort；不存在 blanket Max 禁令，也不设需要用户按次审批的流程。
+* **子任务仅观察不阻断**：父模型通过原生 OMP `task` 派发的子代理/子任务（无论路由到何种 effort，含 `Max` 的日常档位）属于按模型和角色区分的正常选项，WEConverge 仅记录为 `observedIsMax` 等咨询标注，不在执行前拒绝、不改写、不取消；该类原生 `task` 不经父会话 `raise_effort` 的阶梯门控。
+* **模型感知、无全局禁令**：成本判断以 `modelRoles` / `task.agentModelOverrides` 等实际路由与 `effortPolicies` 匹配到的阶梯为准，不把标签为 `Max` 的路由一刀切；无前置 token/额度消耗预估，无全局 Max 禁令，用户通过 OMP 自行选择的模型/思考强度不受此梯阶限制。配置示例均用中性虚构 ID（如 `acme/*`、`other/bar`），不使用真实模型名。
 ### 4. 无缝复用 OMP：即插即用，零系统侵入
 * 完全复用 OMP 原生的 Agent 角色、模型路由、Task 派遣、工具链路与生命周期。
 * 作为用户级 Extension 独立安装与升级，不侵入 OMP 核心，不强制绑定私有运行时。
@@ -79,6 +78,30 @@ J:\OhMyPi\data\.omp\agent\extensions\weconverge -> J:\PigeonYang\tools\weconverg
 /weconverge status   # 查看当前运行状态、baseline 与配置
 /weconverge reset    # 重置当前任务状态与 baseline，保留启用状态
 ```
+
+---
+
+## 可配置按模型自动 effort 阶梯
+
+在 `settings.json` 顶层可选添加 `effortPolicies`（键名大小写精确），按模型声明自动升档阶梯。未配置时行为与历史一致（内置 `medium→high→xhigh`）；配置存在但校验失败时 `raise_effort` 自动升档被禁用并在 `status` 报告 `CONFIG ERROR`。
+
+```json
+{
+  "effortPolicies": {
+    "rules": [
+      { "match": "acme/*", "automaticEfforts": ["medium", "high", "xhigh"] },
+      { "match": "other/*", "automaticEfforts": ["high", "xhigh", "max"] }
+    ],
+    "default": { "automaticEfforts": ["medium", "high", "xhigh"] }
+  }
+}
+```
+
+- **键精确**：仅 `effortPolicies.rules[].match` / `rules[].automaticEfforts` / `default.automaticEfforts`。
+- **有序首匹配**：按 `rules` 声明顺序首条命中即止，未命中回退 `default`；大小写敏感，全量匹配，仅 `*`/`?` 为通配，`provider/model:effort` 中 `:effort` 后缀不参与匹配。
+- **仅下一阶**：每次 `raise_effort` 仅升至匹配到阶梯的下一阶，可非连续（如 `medium→xhigh`），已含 `max` 时可自动至 `max`；否则不自动至 `max`。每次执行后立即读回实际 effort。
+- **原生 `task` 不受阶梯门控**：父模型直接发射的 `task(tasks:[...])` 保持咨询观察、不阻断、不改写，仅作 `observed` 记录。
+- **示例 ID 均为虚构**（如 `acme/*`），不使用真实模型名；不引入按次用户授权流程。
 
 ---
 

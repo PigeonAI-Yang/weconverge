@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "project": "WEConverge",
   "version": "1.0.0",
-  "updatedAt": "2026-08-20T19:45:00+08:00",
+  "updatedAt": "2026-08-21T10:30:00+08:00",
   "statusCorrection": {
     "date": "2026-08-20",
     "reason": "2026-08-19 验收结论 REJECTED：ACCEPTANCE/ledger 与现场证据不一致（错误完成声明/证据失真）。本段保留该历史纠偏及证据；当前修复后 T04/T05/T06/T08 已完成，T07 仍因 AC-101..115 的 BLOCKED/SOURCE GAP 保持 blocked，T09 在真实本地 commit 前保持 pending。",
@@ -476,6 +476,40 @@
       "artifacts": [
         "ACCEPTANCE_ADVISORY.md",
         "docs/audits/2026-08-20-weconverge-managed-terminal-live-acceptance.md"
+      ]
+    },
+    {
+      "id": "T15",
+      "title": "可配置按模型自动 effort 阶梯",
+      "caps": [
+        "CAP-005",
+        "CAP-006",
+        "CAP-007",
+        "CAP-011",
+        "CAP-013"
+      ],
+      "acs": [],
+      "deps": [
+        "T13"
+      ],
+      "status": "in_progress",
+      "note": "Owner-approved design docs/spark/2026-08-21-configurable-model-effort-policy-design.md @ bfef9fd + Owner implementation authorization 2026-08-21; deps T13 only (not blocked T14, satisfied). Scope/artifacts 为契约路径清单未声称已存在或已通过：src/core/config.ts, src/core/types.ts, src/core/decision.ts, src/core/state.ts, src/core/audit.ts, src/core/status.ts, src/extension.ts, PRD.md, SPEC.md, TECHNICAL_DESIGN.md, README.md, README.txt, test/mechanical.test.ts, test/extension.integration.test.ts. 精确验收：13 项设计 ACs AC-01..AC-13 + post-set actual readback 读回一致 + 源码 src 内无硬编码真实模型名 + native task 保持 advisory 观察不阻断；验收保持 pending 直至实现目标套件通过，不得伪造 verifiedBy；当前唯一 in_progress.",
+      "artifacts": [
+        "src/core/config.ts",
+        "src/core/types.ts",
+        "src/core/decision.ts",
+        "src/core/state.ts",
+        "src/core/audit.ts",
+        "src/core/status.ts",
+        "src/extension.ts",
+        "PRD.md",
+        "SPEC.md",
+        "TECHNICAL_DESIGN.md",
+        "README.md",
+        "README.txt",
+        "test/mechanical.test.ts",
+        "test/extension.integration.test.ts",
+        "docs/spark/2026-08-21-configurable-model-effort-policy-design.md"
       ]
     }
   ]

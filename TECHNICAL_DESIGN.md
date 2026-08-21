@@ -1,28 +1,26 @@
 # WEConverge — TECHNICAL_DESIGN.md
 
-- 版本：1.1.0-advisory / 2026-08-20（纯咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md`，Owner-approved）+ D-08 correction (AC-L02 RETIRED → AC-A18)
-- 历史基线：1.0.0 / 2026-08-19（原文保留于本文第 13 章及以后（§13+）作为历史追溯，除以 `> **咨询层…**` 标注的补充外无删除/重写；§0–12 为咨询层，冲突处以咨询层为准）
-- 上游：`PRD.md v1.1.0-advisory`、`SPEC.md v1.1.0-advisory`、`docs/spark/2026-08-20-weconverge-pure-advisory-design.md`（含 D-08）
-- 权威顺序：Owner 显式决定 D-01..D-08 > PRD/SPEC 咨询层 > 历史基线 > 本文件咨询层 > 本文件历史层
+- 版本：1.2.0-effortPolicy / 2026-08-21（纯咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` + D-08；可配置阶梯权威：`docs/spark/2026-08-21-configurable-model-effort-policy-design.md` Owner-approved D-09..D-20）
+- 历史基线：1.0.0 / 2026-08-19（原文保留于本文第 13 章（§13 历史）作为历史追溯，除以 `> **咨询层…**` 标注的补充外无删除/重写；§0–12 与 §14 为咨询层，冲突处以咨询层为准）
+- 上游：`PRD.md v1.2.0-effortPolicy`、`SPEC.md v1.2.0-effortPolicy`、`docs/spark/2026-08-20-weconverge-pure-advisory-design.md`（含 D-08）+ `docs/spark/2026-08-21-configurable-model-effort-policy-design.md`（D-09..D-20）
+- 权威顺序：Owner 显式决定 D-01..D-08, D-09..D-20 > PRD/SPEC 咨询层（§0, §14, §15/§23） > 历史基线 > 本文件咨询层 > 本文件历史层
 - 权威代码目录：`J:\PigeonYang\tools\weconverge`
 
-> **实施说明**：本文第 0–12 章为现行咨询技术设计；第 13 章及以后（§13+）为 v1.0.0 历史设计保留追溯（除显式标注的补充外无删除/重写）。
+> **实施说明**：本文第 0–12 章与第 14 章为现行咨询技术设计；第 13 章（§13 历史）为 v1.0.0 历史设计保留追溯（除显式标注的补充外无删除/重写）。
 
 ---
 
 ## 0. 咨询层修订记录
 
-| 决定 | 历史设计条款 | 咨询层处置 |
-|---|---|---|
 | D-01 | §3 唯一决策入口自动派发 `explore_in_parallel` via `newSession({parentSession})` | 退役自动派发；`weconverge_decide` 窄化为父-effort/缺口/手动授权；常规探索由父原生 `task` 发射 |
 | D-02 | §6 成本硬护栏（Max/并发/波次/去重/紧凑强制） | 退役为咨询观察（`status`/audit 观测，不阻断） |
-| D-03 | §5 effort 阶梯自动 Max 阻断 | 仅父 effort 阶梯保留强制 |
+| D-03 | §5 effort 阶梯自动 Max 阻断 | 仅父 effort 阶梯保留强制；**D-09..D-20 修订**：当 `effortPolicies` 中匹配到的 `automaticEfforts` 显式包含 `max` 时，`max` 可成为该模型的自动升档目标（§14），无 blanket Max 禁令 |
 | D-04 | §5 `ResolvedRouteV1.resolvedEffort: xhigh` 可证明 | 修订为 SOURCE GAP |
 | D-05 | §6 CP-001 自动外部探索可派发 | 退役为观察 |
 | D-06 | §8 Runtime 每父会话一运行时 | 修订为单活 full runtime + 有界 tombstones；`session_switch` 销毁旧 runtime |
 | D-07 | §11/§12 ladder 完整性 PASS | 退役；以分层验收替代 |
 | D-08 | §12 AC-L02 最终 Provider payload 回读（启用后首个 generation 的 `before_agent_start` systemPrompt 必须在最终 Provider payload 中可回读验证） | **RETIRED (never PASS)** — Provider-wire payload 内省非 Extension 职责；下游 OMP 组装为官方 `before_agent_start.systemPrompt` hook 合同，超出 WEConverge 边界；替代为 AC-A18 确定性官方 hook 握手（enabled 确定性返回精确有界 policy 块、同 generation fingerprint 复用、disabled 无 policy、≤60 tokens、无 Provider 调用/回读） |
-### 0.2 设计选择（Owner-approved 2026-08-20 + D-08）
+| D-09..D-20 | 新增可配置按模型自动 effort 阶梯（`effortPolicies.rules[].match` / `rules[].automaticEfforts` / `default.automaticEfforts`，有序首匹配、大小写敏感全量 glob `*`/`?`、后缀剥离、缺席 builtin-compat、非法禁用、仅下一阶、按次解析/切换重匹配、post-set 读回、原因码穷尽、原生 task 咨询观察） | **新增 §14 现行技术设计**：复用 `config/state/decision/status/audit` 既有模式，不引入第二套 schema/独立 decision 入口；无按次授权；原生 `task` 不阻断 |
 
 
 1. **纯咨询**：无 task override/wrapper、`ctx.invokeTool(task)`、阻断、输入变异、取消、自动派发、强制 `weconverge_decide` 前置。
@@ -34,6 +32,7 @@
 7. **Decide 仅用于父-effort 与正式缺口**：常规探索不经 `weconverge_decide`。
 8. **父模型成本为主**：常规探索零 Extension 诱发 Provider 调用，直接原生 `task` 批处理，无轮询。
 9. **确定性官方 hook 握手 (D-08 / AC-A18)**：`before_agent_start` handler 在 enabled 时确定性返回精确有界 policy 块、同 generation fingerprint 复用、disabled 无 policy、≤60 tokens；下游 Provider payload 组装为 OMP 官方合同，不检验、不以行为 canary 证明。
+10. **可配置按模型自动 effort 阶梯 (D-09..D-20)**：`settings.json` 顶层可选 `effortPolicies.rules[].match` / `rules[].automaticEfforts` / `default.automaticEfforts`（键精确、大小写敏感），有序首匹配、`*`/`?` 全量 glob、effort 后缀剥离；缺席走内置兼容 `medium→high→xhigh`；存在但非法则禁用 `raise_effort` 并 `degraded/CONFIG ERROR`；非连续仅下一阶；含 `max` 可自动至 `max`（无 blanket Max 禁令）；每次 `raise_effort` 按 `actualModel`/`actualEffort` 按次解析、切换后重匹配、设置后读回、原因码穷尽；原生 `task` 保持咨询观察、不阻断；无按次授权。
 ## 1. 架构总览（咨询层 — 现行）
 
 ```
@@ -113,6 +112,7 @@
 - 常规探索不经此门：父直接 `task(context, tasks:[≤2])`，Extension 观察为准。
 - 幂等：`decisionId` 在同一 `sessionId/generation` 内唯一；同 id 同 payload 返首次，同 id 异 payload 拒绝。
 - 返回：`accepted|rejected|blocked|source_gap` 含 `generation/decisionId/auditEventId/effectiveAction/createdChildIds`（窄门下 `createdChildIds` 恒空）。
+> **D-09..D-20 阶梯补充（§14 现行）：** `raise_effort` 的 `medium→high→xhigh` 仅为 `effortPolicies` 缺席时的内置兼容缺省；配置存在时按 `effortPolicies.rules[].match` 有序首匹配（大小写敏感全量 glob，仅 `*`/`?`，后缀剥离）与 `default` 回退确定下一阶，非连续仅下一阶、含 `max` 可自动至 `max`（无 blanket 禁令），每次按 `actualModel`/`actualEffort` 按次解析、切换后重匹配、设置后读回，原因码按 SPEC §23.9 穷尽；原生 `task` 不经此窄门（§14.6）。
 
 ---
 
@@ -180,6 +180,8 @@ capabilities:
 ```
 
 - 模型感知 Max：按能力对应 resolved model 是否为 Max-capable 作 `inferredMaxCapable/observedIsMax` 标注，不阻断原生 `task`；`relativeCostTier` 不冒充 wire effort。
+
+> **D-09..D-20 配置补充（§14 现行）：** `effortPolicies` 位于 `settings.json` 顶层可选块，键精确为 `effortPolicies.rules[].match` / `rules[].automaticEfforts` / `default.automaticEfforts`；缺席走内置兼容，存在必含 `default` 且按 §14 校验。
 
 ---
 
@@ -302,3 +304,64 @@ junction 安装 → 真实 smoke AC-101..115。
 ### 13.14 禁区保证（历史）
 
 代码仅写项目内 `src/ test/ docs/ *.md *.json *.ts` 与 junction。不碰禁区。
+
+---
+
+## 14. 可配置按模型自动 effort 阶梯技术设计（D-09..D-20 — 2026-08-21 现行）
+
+> **归属**：Owner-approved `docs/spark/2026-08-21-configurable-model-effort-policy-design.md`。本章为现行咨询技术设计，不重写 §13 历史原文；与历史冲突处以本章为准。共享键精确为 `effortPolicies.rules[].match` / `rules[].automaticEfforts` / `default.automaticEfforts`（大小写精确）。复用既有 `config/state/decision/status/audit` 模式，不引入第二套 schema 或独立 decision 入口；无按次授权；原生 `task` 保持咨询观察、不阻断；源码不得出现真实模型名（D-13）。
+
+### 14.1 归属模块（Owning modules）
+
+| 模块 | 文件 | 覆盖 | 职责（D-09..D-20） |
+|---|---|---|---|
+| 类型 | `src/core/types.ts` | SPEC §23.1/23.6 | 新增 `EffortPoliciesBlock`、`StatusEffortPolicyView`、`AuditEffortPolicyFields` 及 `EffortLevel` 复用；`MatchedRule` / `PolicySource` 类型 |
+| 配置 | `src/core/config.ts` | SPEC §23.2/23.3 | `effortPolicies` 校验（非空、官方 efforts、唯一、升序、合法 glob、重复/遮蔽、`default` 必选）；缺席→`builtin-compat`；存在无效→`CONFIG ERROR` 熔断（禁用 `raise_effort`、health/degraded、`effective=null`） |
+| 决策 | `src/core/decision.ts` | SPEC §23.4/23.5/23.9 | `raise_effort` 按次解析 `actualModel`/`actualEffort`、有序首匹配、非连续下一阶、Max 可自动、policy conflict 与原因码穷尽（§23.9）、post-set 读回 |
+| 状态 | `src/core/state.ts` | SPEC §23.5 | `modelSwitch` 后重匹配语义、状态视图 `matchedRule`/`automaticEfforts`/`nextEffort`/`source` 缓存与切换失效 |
+| 状态渲染 | `src/core/status.ts`（或等价状态渲染） | SPEC §23.6 | `status` 新视图 `effortPolicyStatus`/`healthDetail`/`effective`/`validationErrors` 与既有 `actualModel/actualEffort/effortOwner/health/sourceGaps/priceTelemetry` 并存 |
+| 审计 | `src/core/audit.ts` | SPEC §23.6 | audit 增量字段 `requestedEffort/actualModel/actualEffort/matchedRule/automaticEfforts/nextEffort/reasonCode/policySource` 与脱敏/截断延续 |
+| 接线 | `src/extension.ts` | SPEC §23.3/23.8 | `settings.json` 读取、校验失败时禁用 `raise_effort`、health/status 熔断、`before_agent_start` 保持不变（不因阶梯新增新 hook） |
+
+> 复用原则：不创建第二套 `config` schema、独立 decision 入口或 `task` wrapper；全部经由既有 `weconverge_decide` 窄门与既有观察通道。
+
+### 14.2 数据流（Data flow）
+
+```
+settings.json ──► config.ts: validateEffortPolicies() ──► effectivePolicies | CONFIG ERROR
+                                         │
+                                         ▼
+ctx.models.current() + ctx.getThinkingLevel() ──► decision.ts: resolvePolicy(actualModel, actualEffort)
+         │剥离 :effort 后缀 │有序首匹配 match → matchedRule/default │定位 index → nextEffort
+         └───────────────────────────────────────────┤
+                                                    ▼
+                                          weconvergeDecide(raise_effort) ──► reasonCode (§23.9)
+                                                    │ accepted → setThinkingLevel(nextEffort) → post-set readback
+                                                    │ rejected/blocked/source_gap/policy_conflict → status/audit 记录
+                                                    ▼
+                                          status.ts + audit.ts: effortPolicyStatus/effective/reasonCode/policySource 持久化
+                                                    │
+                                          modelSwitch ──► state.ts: invalidate matchedRule → 下一次 raise_effort 重匹配
+
+native task: pi.on("tool_call") / pi.on("tool_result") / task:subagent:* ──► observed 记录（不经 effortPolicies 门控）
+```
+
+- 每次 `raise_effort` 均按当时 `actualModel`/`actualEffort` 重新解析，不缓存旧匹配跨代。
+- `effective` 与 `nextEffort` 为只读视图，随 `actualModel`/`actualEffort` 与配置变化即时计算。
+
+### 14.3 错误处理（Error handling）
+
+- **缺席**：`effortPolicies` 未设 → `effective.source="builtin-compat"`, `automaticEfforts=["medium","high","xhigh"]`, `effortPolicyStatus="builtin-compat"`，不产生校验错误。
+- **校验失败**：任一 §23.1 规则不满足 → 整体 `effortPolicies` 无效：`raise_effort` 禁用，`effortPolicyStatus="config_error"`, `health="degraded"`, `healthDetail="CONFIG ERROR: <firstCode> <message>"`, `effective=null`。仅此窄门 fail-closed，其余路径不受影响。
+- **policy conflict**：`actualEffort` 不在所选 `automaticEfforts` 中 → `POLICY_CONFLICT_CURRENT_NOT_IN_LADDER`, `effortPolicyStatus="policy_conflict"`, `health: degraded`，audit 记 `policyConflict`。
+- **source gap**：`actualModel` / `actualEffort` 不可读 → `SOURCE_GAP_*`, `effortPolicyStatus="source_gap"`，不变更 effort。
+- **无下一阶**：已处阶梯末位 → `REJECTED_NO_NEXT_RUNG`，`effortPolicyStatus="ok"`，拒绝升档。
+- **设置后读回不一致**：`failed`/`degraded`，`restoreState` 按既有契约处理，不二次重试。
+- **无 blanket Max 禁令、无按次授权**：`max` 是否可达由匹配到的阶梯决定；不弹出授权弹窗。
+
+### 14.4 迁移（Migration）
+
+- 既有用户无 `effortPolicies` 配置时零迁移：行为等价于 v1.1 固定 `medium→high→xhigh`，`status` 显示 `builtin-compat`。
+- 新增配置的用户仅需在 `settings.json` 顶层添加 `effortPolicies` 块，键精确如 §14.1；错误配置仅禁用 `raise_effort`，不影响其它功能，修正后下一次 `raise_effort` 生效。
+- 不新增持久化文件或独立通道；版本化原子文件与 `appendEntry` 双轨持久化保持不变。
+- 测试与文档中的模型 ID 必须为虚构 ID（如 `acme/*`、`other/bar`），不得使用真实产品模型名。

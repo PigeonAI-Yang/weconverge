@@ -2,7 +2,7 @@
 // AC-001/002/003/006/016/026/028/029/031/039/041 on the real src/extension.ts wiring.
 // In-process fake ExtensionAPI: no real OMP, no network, no paid model.
 // Run: node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/extension.integration.test.ts
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -738,6 +738,124 @@ function raiseDecision(evidenceId = "e1"): Record<string, unknown> {
     ok("F-01 missing state does not initialize fresh baseline", st.phase === "degraded" && st.health === "degraded" && st.routingIntegrity === "source_gap");
     const before = await fire(h, "before_agent_start", { type: "before_agent_start", prompt: "p", systemPrompt: ["base"] });
     ok("F-02 recovered source gap blocks automatic policy — RETIRED/advisory: degraded does not block official-hook policy (pure advisory)", before !== undefined && typeof before === "object" && before !== null && "systemPrompt" in (before as Record<string, unknown>) && Array.isArray((before as Record<string, unknown>).systemPrompt) && ((before as Record<string, unknown>).systemPrompt as string[]).includes(POLICY_BLOCK));
+  } finally {
+    cleanup(h);
+  }
+}
+
+// =================== EffortPolicies extension persistence ===================
+{
+  const h = makeHarness();
+  try {
+    const cfg = {
+      schemaVersion: 1,
+      enabled: true,
+      maxParallelExplorers: 2,
+      maxExplorationWaves: 2,
+      capabilities: { cheap_worker: "task", mechanical: "sonic", research: "scout", review: "reviewer", frontend: "designer" },
+      relativeCostTiers: { current: 2, task: 1, sonic: 1, scout: 1, reviewer: 1, designer: 2 },
+      effortCostTiers: { medium: 2, high: 3, xhigh: 4, max: 5 },
+      effortPolicies: {
+        rules: [{ match: "acme/*", automaticEfforts: ["high", "xhigh", "max"] }],
+        default: { automaticEfforts: ["medium", "high", "xhigh"] },
+      },
+    };
+    mkdirSync(join(h.root, "weconverge"), { recursive: true });
+    writeFileSync(h.settingsFile, JSON.stringify(cfg), "utf8");
+    (h.ctx.model as unknown as Record<string, unknown>).id = "acme/bar";
+    await fire(h, "session_start", { type: "session_start" });
+    await runCommand(h, "on");
+    h.pi.state.thinkingLevel = "xhigh" as ThinkingLevel;
+    const res = await callTool(h, { decision: decision(raiseDecision("e1")), evidences: [evidence("e1")] });
+    ok("extension loads Max ladder and raises to max", res.status === "accepted" && h.pi.state.thinkingLevel === "max");
+    const st = await getStatus(h);
+    ok("extension status after Max raise ok", st.effective?.nextEffort === null && st.health === "ok" && st.effortPolicyStatus === "ok");
+  } finally {
+    cleanup(h);
+  }
+}
+{
+  const h = makeHarness();
+  try {
+    const cfg = {
+      schemaVersion: 1,
+      enabled: false,
+      maxParallelExplorers: 2,
+      maxExplorationWaves: 2,
+      capabilities: { cheap_worker: "task", mechanical: "sonic", research: "scout", review: "reviewer", frontend: "designer" },
+      relativeCostTiers: { current: 2, task: 1, sonic: 1, scout: 1, reviewer: 1, designer: 2 },
+      effortCostTiers: { medium: 2, high: 3, xhigh: 4 },
+      effortPolicies: {
+        rules: [{ match: "acme/*", automaticEfforts: ["medium", "high"] }],
+        default: { automaticEfforts: ["medium", "high", "xhigh"] },
+      },
+    };
+    mkdirSync(join(h.root, "weconverge"), { recursive: true });
+    writeFileSync(h.settingsFile, JSON.stringify(cfg), "utf8");
+    await fire(h, "session_start", { type: "session_start" });
+    await runCommand(h, "on");
+    let persisted = JSON.parse(readFileSync(h.settingsFile, "utf8")) as Record<string, unknown>;
+    ok("on preserves effortPolicies", JSON.stringify((persisted.effortPolicies as Record<string, unknown>)) === JSON.stringify(cfg.effortPolicies));
+    ok("on preserves all recognized settings fields", persisted.maxParallelExplorers === cfg.maxParallelExplorers && persisted.maxExplorationWaves === cfg.maxExplorationWaves && JSON.stringify(persisted.capabilities) === JSON.stringify(cfg.capabilities) && JSON.stringify(persisted.relativeCostTiers) === JSON.stringify(cfg.relativeCostTiers) && JSON.stringify(persisted.effortCostTiers) === JSON.stringify(cfg.effortCostTiers));
+    await runCommand(h, "off");
+    persisted = JSON.parse(readFileSync(h.settingsFile, "utf8")) as Record<string, unknown>;
+    ok("off preserves effortPolicies", JSON.stringify((persisted.effortPolicies as Record<string, unknown>)) === JSON.stringify(cfg.effortPolicies));
+    ok("off preserves all recognized settings fields", persisted.maxParallelExplorers === cfg.maxParallelExplorers && persisted.maxExplorationWaves === cfg.maxExplorationWaves && JSON.stringify(persisted.capabilities) === JSON.stringify(cfg.capabilities) && JSON.stringify(persisted.relativeCostTiers) === JSON.stringify(cfg.relativeCostTiers) && JSON.stringify(persisted.effortCostTiers) === JSON.stringify(cfg.effortCostTiers));
+    ok("off writes enabled false", persisted.enabled === false);
+    await runCommand(h, "on");
+    persisted = JSON.parse(readFileSync(h.settingsFile, "utf8")) as Record<string, unknown>;
+    ok("on re-enables preserves effortPolicies", JSON.stringify((persisted.effortPolicies as Record<string, unknown>)) === JSON.stringify(cfg.effortPolicies) && persisted.enabled === true);
+    ok("on re-enables preserves all recognized settings fields", persisted.maxParallelExplorers === cfg.maxParallelExplorers && persisted.maxExplorationWaves === cfg.maxExplorationWaves);
+  } finally {
+    cleanup(h);
+  }
+}
+{
+  const h = makeHarness();
+  try {
+    const invalid = {
+      schemaVersion: 1,
+      enabled: true,
+      maxParallelExplorers: 2,
+      maxExplorationWaves: 2,
+      capabilities: { cheap_worker: "task", mechanical: "sonic", research: "scout", review: "reviewer", frontend: "designer" },
+      relativeCostTiers: { current: 2, task: 1, sonic: 1, scout: 1, reviewer: 1, designer: 2 },
+      effortCostTiers: { medium: 2, high: 3, xhigh: 4 },
+      effortPolicies: {
+        rules: [{ match: "", automaticEfforts: ["medium", "high"] }],
+        default: { automaticEfforts: ["medium", "high"] },
+      },
+    };
+    mkdirSync(join(h.root, "weconverge"), { recursive: true });
+    writeFileSync(h.settingsFile, JSON.stringify(invalid), "utf8");
+    await fire(h, "session_start", { type: "session_start" });
+    const st = await getStatus(h);
+    ok("invalid policy yields config_error degraded", st.effortPolicyStatus === "config_error" && st.health === "degraded" && st.healthDetail !== null);
+    ok("invalid policy effective null", st.effective === null);
+    h.pi.state.thinkingLevel = "medium" as ThinkingLevel;
+    const before = h.pi.state.thinkingLevel;
+    const res = await callTool(h, { decision: decision(raiseDecision("e1")), evidences: [evidence("e1")] });
+    ok("invalid policy disables raise_effort", res.status === "blocked" && h.pi.state.thinkingLevel === before);
+  } finally {
+    cleanup(h);
+  }
+}
+{
+  const h = makeHarness();
+  try {
+    await fire(h, "session_start", { type: "session_start" });
+    await runCommand(h, "on");
+    const st = await getStatus(h);
+    ok("no effortPolicies builtin-compat", st.effortPolicyStatus === "builtin-compat" && st.effective?.source === "builtin-compat" && Array.isArray(st.effective?.automaticEfforts));
+    ok("missing policy retains builtin medium/high/xhigh", JSON.stringify(st.effective?.automaticEfforts) === JSON.stringify(["medium", "high", "xhigh"]) && st.health === "ok");
+    const h2 = makeHarness();
+    mkdirSync(join(h2.root, "weconverge"), { recursive: true });
+    writeFileSync(h2.settingsFile, "{ invalid json", "utf8");
+    await fire(h2, "session_start", { type: "session_start" });
+    const st2 = await getStatus(h2);
+    ok("invalid JSON does not fabricate policy retains builtin", st2.effortPolicyStatus === "builtin-compat" && JSON.stringify(st2.effective?.automaticEfforts) === JSON.stringify(["medium", "high", "xhigh"]));
+    ok("invalid JSON fails safely without degraded health from fabricated policy", st2.health === "ok" || st2.health === "degraded");
+    cleanup(h2);
   } finally {
     cleanup(h);
   }

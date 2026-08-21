@@ -49,11 +49,11 @@ WEConverge 逼着 AI 在遇到非简单任务时，先在内部拿出几个本�
 3. 按模型和角色判断成本，不把 Max 一刀切
 ================================================================================
 
-WEConverge 的成本纪律分两层：
+WEConverge 的成本纪律分两层（可配置按模型阶梯，键精确为 effortPolicies.rules[].match / rules[].automaticEfforts / default.automaticEfforts）：
 
-- 父会话梯阶：仅 `weconverge_decide` 的 `raise_effort` 走 Medium -> High -> XHigh 逐级递增，Max 不是该梯阶的目标；这是父模型自身思考深度的纪律，不存在需要用户审批才能升级的流程。
-- 子任务仅观察：父模型通过原生 OMP `task` 派发的子代理/子任务若路由到 Max（例如 Kimi K3 Max 作为日常档位），属于按模型和角色区分的正常选项，WEConverge 仅记录为 observedIsMax 的咨询标注，不在执行前拒绝、不改写、不取消。
-- 模型感知：成本判断以 modelRoles / task.agentModelOverrides 等实际路由为准，不把标签为 Max 的路由一刀切；无前置额度预估，无全局 Max 禁令；用户通过 OMP 自行选择的模型/思考强度不受此梯阶限制。
+- 父会话可配置梯阶：`weconverge_decide` 的 `raise_effort` 按 settings.json 中 effortPolicies 的按模型阶梯逐级提升（有序首匹配、大小写敏感全量 glob 仅 */?、effort 后缀剥离；未配置时走内置兼容 Medium -> High -> XHigh；已配置且显式包含 max 时可自动升至 max，否则不自动至 max）。每次仅升至已配置的下一阶，可非连续（如 medium->xhigh），执行后立即读回实际 effort；不存在 blanket Max 禁令，也不设需要用户按次审批的流程。
+- 子任务仅观察：父模型通过原生 OMP task 派发的子代理/子任务（无论路由到何种 effort，含 Max 的日常档位）属于按模型和角色区分的正常选项，WEConverge 仅记录为 observedIsMax 的咨询标注，不在执行前拒绝、不改写、不取消；该类原生 task 不经父会话 raise_effort 的阶梯门控。
+- 模型感知：成本判断以 modelRoles / task.agentModelOverrides 等实际路由与 effortPolicies 匹配到的阶梯为准，不把标签为 Max 的路由一刀切；无前置额度预估，无全局 Max 禁令；用户通过 OMP 自行选择的模型/思考强度不受此梯阶限制。配置示例均用中性虚构 ID（如 acme/*、other/bar），不使用真实模型名。
 
 ================================================================================
 4. 无缝复用 OMP：即插即用，绝不搞全家桶绑架
@@ -104,6 +104,28 @@ WEConverge 实行请求与实跑分离：
   /weconverge reset    # 重置当前任务状态
 
 开启后，后续的新任务自动享受策略加速；不想用了随时一行命令关掉，完全还原原有使用习惯。
+
+================================================================================
+附：可配置按模型自动 effort 阶梯（中性虚构示例，不使用真实模型名）
+================================================================================
+
+在 settings.json 顶层可选添加 effortPolicies（键名大小写精确）：
+
+  {
+    "effortPolicies": {
+      "rules": [
+        { "match": "acme/*", "automaticEfforts": ["medium", "high", "xhigh"] },
+        { "match": "other/*", "automaticEfforts": ["high", "xhigh", "max"] }
+      ],
+      "default": { "automaticEfforts": ["medium", "high", "xhigh"] }
+    }
+  }
+
+- 键精确：仅 effortPolicies.rules[].match / rules[].automaticEfforts / default.automaticEfforts。
+- 有序首匹配、大小写敏感全量 glob（仅 */?）、provider/model:effort 中 :effort 后缀不参与匹配。
+- 未配置走内置兼容 medium->high->xhigh；校验失败则禁用 raise_effort 并在 status 报告 CONFIG ERROR。
+- 每次仅升至匹配到阶梯的下一阶，可非连续；已含 max 时可自动至 max，否则不自动至 max；执行后立即读回。
+- 原生 task 保持咨询观察、不阻断、不改写；示例 ID 均为虚构（如 acme/*），不引入按次用户授权流程。
 
 ================================================================================
 总结

@@ -1,13 +1,13 @@
 # WEConverge SPEC
 
-- 状态：Advisory normative baseline v1.1.0-advisory — Owner-approved pure advisory (2026-08-20) + D-08 correction (2026-08-20, Owner-directed: AC-L02 Provider payload readback RETIRED → AC-A18 deterministic hook handoff)
-- 历史基线：v1.0.0 (2026-08-19) 原文保留于本文第 1–12 章作为历史记录（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），仅通过本文第 0 章与第 13 章以后的咨询层显式覆盖
-- 咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` (Owner-approved 2026-08-20) + D-08 `before_agent_start` 官方 hook 权威交接
+- 状态：Advisory normative baseline v1.2.0-effortPolicy — Owner-approved pure advisory (2026-08-20) + D-08 correction (2026-08-20) + D-09..D-20 configurable per-model automatic effort ladders (2026-08-21, Owner-approved)
+- 历史基线：v1.0.0 (2026-08-19) 原文保留于本文第 1–12 章作为历史记录（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），仅通过本文第 0 章、第 13 章以后与第 23 章的咨询层显式覆盖；新增 D-09..D-20 可配置阶梯不重写历史原文
+- 咨询权威：`docs/spark/2026-08-20-weconverge-pure-advisory-design.md` (Owner-approved 2026-08-20) + D-08 `before_agent_start` 官方 hook 权威交接 + `docs/spark/2026-08-21-configurable-model-effort-policy-design.md` (Owner-approved 2026-08-21, D-09..D-20)
 - 历史基线：`docs/spark/2026-08-19-weconverge-design.md`
-- 上游：`PRD.md v1.1.0-advisory`（含 §0 咨询层与 D-08）
-- 适用范围：WEConverge v1 OMP 用户级 Extension — 咨询层为现行实施依据
+- 上游：`PRD.md v1.2.0-effortPolicy`（含 §0、§13+、§15 D-09..D-20）
+- 适用范围：WEConverge v1 OMP 用户级 Extension — 咨询层为现行实施依据（§0、§13+、§23 为现行；§1–12 为历史保留）
 
-> **实施说明**：本文第 0 章与第 13 章以后为现行咨询规范；第 1–12 章为 v1.0.0 历史规范保留（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），冲突处以咨询层为准（见 §0.2）。
+> **实施说明**：本文第 0 章、第 13 章以后与第 23 章为现行咨询规范；第 1–12 章为 v1.0.0 历史规范保留（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），冲突处以咨询层为准（见 §0.2 与 §23）。
 
 ---
 
@@ -15,10 +15,10 @@
 
 ### 0.1 权威与覆盖规则
 
-1. 历史层（§1–12, v1.0.0）保留（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），仅作追溯；咨询层（§0, §13+）为现行规范。
-2. 任一历史 `CAP/AC` 的强制语义（block/mutation/cancel/auto-dispatch/pre-provider Max proof/强制并发·波次·去重·紧凑输出）或自相矛盾的 Provider payload 回读要求退役必须在 §0.2–§0.3 显式列出；未列入者继续有效。
-3. 咨询层新增能力为 `CAP-A01..A08`，新增验收为 `AC-A01..A18`（机械/状态, 含 D-08 AC-A18）、`AC-L01..L05`（真实 OMP 观察，其中 AC-L02 已 RETIRED per D-08）、`AC-C01..C03`（成本）；历史 `AC-001..044` / `AC-101..115` 中被 §0.3 列为 `RETIRED` 的项永不按 PASS 呈现。
-4. `REQ→CAP→AC` 映射：历史映射保留于 §12；现行映射为 §13.6（`REQ-100..115 → CAP-A → AC-A/L/C`，含 AC-A18 → REQ-100/CAP-A01）。
+1. 历史层（§1–12, v1.0.0）保留（除以 `> **咨询层…**` 显式标注的视觉化补充外无删除/重写），仅作追溯；咨询层（§0, §13+, §23）为现行规范。
+2. 任一历史 `CAP/AC` 的强制语义（block/mutation/cancel/auto-dispatch/pre-provider Max proof/强制并发·波次·去重·紧凑输出）或自相矛盾的 Provider payload 回读要求退役必须在 §0.2–§0.3 或 §23 显式列出；未列入者继续有效。
+3. 咨询层新增能力为 `CAP-A01..A08` + `CAP-A10`（D-09..D-20 可配置阶梯，复用既有 config/state/decision/status/audit 模式，不引入第二套 schema 或独立 decision 入口），新增验收为 `AC-A01..A18`（机械/状态, 含 D-08 AC-A18）、`AC-L01..L05`（真实 OMP 观察，其中 AC-L02 已 RETIRED per D-08）、`AC-C01..C03`（成本）+ `AC-E01..E13`（D-09..D-20 可配置阶梯，§23.10，等价于设计 AC-01..13）；历史 `AC-001..044` / `AC-101..115` 中被 §0.3 列为 `RETIRED` 的项永不按 PASS 呈现。
+4. `REQ→CAP→AC` 映射：历史映射保留于 §12；现行映射为 §13.6（`REQ-100..115 → CAP-A → AC-A/L/C`，含 AC-A18 → REQ-100/CAP-A01）+ §23.11（`REQ-116..122 → CAP-A10 → AC-E01..E13`）。
 
 ### 0.2 D-01..D-08 显式覆盖
 
@@ -154,6 +154,8 @@ type Integrity =
 ```
 
 `max` 只用于识别并标注实际路由，绝不是自动状态机 `raise_effort` 的合法目标（咨询层：原生 `task` 的 Max 仅为观察标注）。
+
+> **D-09..D-20 补充（§23 现行，superseded 声明）：** 当 `effortPolicies` 中匹配到的 `automaticEfforts` 显式包含 `max` 时，`max` 可成为该模型的 `raise_effort` 自动升档目标（`automaticEfforts` 下一阶为 `max`）；未包含 `max` 的阶梯仍保持 `max` 非自动。不存在 blanket Max 禁令；是否可自动至 `max` 由配置决定（D-16）。原生 `task` 的 Max 仍保持咨询观察、不阻断（§23.8）。
 
 ### 4.1-A 咨询层事实分类类型（新增，现行）
 
@@ -536,6 +538,7 @@ medium -> high -> xhigh
 
 > **咨询层修订：** 本阶梯仅适用于 `weconverge_decide raise_effort`（CAP-A05）。
 
+> **D-09..D-20 补充（§23 现行）：** 本节“不存在 `medium→xhigh` 自动转换”在可配置阶梯下修订为：非连续阶梯（如 `["medium","xhigh"]`）允许 `medium→xhigh` 的单阶跳升（D-15），每次仅升至所选 `automaticEfforts` 的下一阶；`high→max` / `xhigh→max` 仅当阶梯显式包含 `max` 且下一阶为 `max` 时允许（D-16）。固定 `medium→high→xhigh` 仅为 `effortPolicies` 缺席时的内置兼容缺省（§23.3）。
 ### 11.2 提升前置条件
 
 `raise_effort` 必须满足：
@@ -1042,3 +1045,202 @@ WEConverge v1.1-advisory 只有在以下全部成立时完成：
 10. Owner 完成最终验收。
 
 > **D-08 完成门变更**：T14 修订版 live 门排除已退役的 AC-L02，计入 AC-A18 确定性门；不以行为 canary（模型实际遵从 policy）作为证明。
+
+---
+
+## 23. 可配置按模型自动 effort 阶梯（D-09..D-20 — 2026-08-21 规范性，现行）
+
+> **权威**：`docs/spark/2026-08-21-configurable-model-effort-policy-design.md` Owner-approved。本章不重写 §1–12 历史原文；与历史层冲突处以本章为准。共享键精确为 `effortPolicies.rules[].match` / `effortPolicies.rules[].automaticEfforts` / `effortPolicies.default.automaticEfforts`（大小写精确）。实现复用既有 `config/state/decision/status/audit` 模式，不引入第二套 schema 或独立 decision 入口；不引入按次用户授权工作流；原生 `task` 保持咨询观察、不阻断。
+
+### 23.1 配置契约：`settings.json` 内 `effortPolicies` 块（精确 schema）
+
+位置：既有 `settings.json` 顶层新增可选对象 `effortPolicies`。其余字段（`schemaVersion`/`enabled`/`maxParallelExplorers`/`maxExplorationWaves`/`capabilities`/`relativeCostTiers`/`effortCostTiers` 等）保持不变。
+
+```ts
+type EffortLevel = "medium" | "high" | "xhigh" | "max";
+
+interface EffortPoliciesBlock {
+  // 有序首匹配规则；按数组顺序评估，首条匹配即止。
+  rules: Array<{
+    // 大小写敏感、完整 canonical provider/model ID 全量匹配；仅 * 与 ? 为通配；effort 后缀不参与匹配（见 23.2）。
+    match: string;
+    // 有序、去重、严格升序（medium < high < xhigh < max）、子集于 EffortLevel、非空。
+    automaticEfforts: EffortLevel[];
+  }>;
+  // 未命中回退：actualModel 已知但未被任何 rule 命中时使用。effortPolicies 存在时必选。
+  default: {
+    automaticEfforts: EffortLevel[];
+  };
+}
+
+// 顶层增量（其余不变）
+interface SettingsJsonV1WithEffortPolicies extends SettingsJsonV1 {
+  effortPolicies?: EffortPoliciesBlock;
+}
+```
+
+约束形式化：
+- `automaticEfforts` 必须 `length >= 1`、元素唯一且按 `medium < high < xhigh < max` 严格升序。
+- `match` 必须非空字符串且为合法 glob（见 23.2）；空串或仅空白视为非法。
+- `rules` 可为空数组（此时所有已知模型均走 `default`），但若 `effortPolicies` 存在则 `default.automaticEfforts` 必须满足阶梯约束且为必选。
+- 规则去重与遮蔽：`match` 精确重复视为重复错误；被前序规则完全包含（shadowing）的后序规则视为校验错误（如前序 `acme/*`、后序 `acme/foo` 为被遮蔽）。
+
+### 23.2 匹配语义与顺序（glob / order / default）
+
+- 运算符：`*` 匹配零或多个任意字符（不含路径分隔语义，视为普通字符集通配）；`?` 匹配恰好一个任意字符。
+- 不支持：`**`、`[class]`、`{a,b}`、`\` 转义、正则；出现即非法 glob。
+- 大小写敏感：`Acme/Foo` 与 `acme/foo` 不等价。
+- 匹配对象：完整 canonical `provider/model` ID 全量匹配（`^glob$`），非子串。effort 后缀分离：`provider/model:effort` 形式中的 `:effort` 部分不参与 glob 匹配，匹配前必须剥离后缀（识别的 effort 后缀为 `medium|high|xhigh|max`，大小写敏感）。
+- 顺序：按 `rules` 声明顺序有序首匹配；首条命中即止。未命中且 `actualModel` 已知时取 `default`（正常回退，不产生错误；`status` 记 `matchedRule: "default"`）。
+
+### 23.3 缺省与校验（missing = builtin-compat, invalid = disable）
+
+- **缺席块**：`settings.json` 中 `effortPolicies` 完全缺席时，采用内置通用兼容缺省阶梯 `medium→high→xhigh`，适用于所有模型，永不自动升至 `max`，不产生 `CONFIG ERROR`，`status` 来源 `builtin-compat`。
+- **存在块但无效**：任一 23.1/23.2 校验失败即整体 `effortPolicies` 无效：
+  - `weconverge_decide: raise_effort` 自动升档被禁用（fail-closed 仅此窄门；不影响 `report_source_gap`/`report_blocked`）。
+  - `health` 置 `degraded`，`status.healthDetail` 与 `status.effortPolicyStatus` 报告 `CONFIG ERROR` 并附首个错误码与可读说明。
+  - `status.effective` 置 `null`，`nextEffort` 为 `null`。
+- 校验按出现顺序执行，任一失败即整体无效；`validationErrors` 在 `config_error` 时非空。
+
+### 23.4 非连续与 Max 可自动
+
+- 阶梯可非连续。例：`["medium","xhigh"]` 合法，表示 `medium→xhigh` 跳过 `high`；每次仅升至已配置的下一阶，不插入未配置的中阶；已处末位则无下一阶（`REJECTED_NO_NEXT_RUNG`）。
+- 当所选 `automaticEfforts` 显式包含 `max` 且 `actualEffort` 的下一阶为 `max` 时，`max` 可成为自动升档目标（D-16 显式例外）；未包含 `max` 的阶梯仍保持 `max` 非自动。不存在 blanket Max 禁令。
+
+### 23.5 运行时解析：按次、重匹配、policy conflict、SOURCE GAP
+
+- **按次解析**：每次 `raise_effort` 按当时可读回的 `actualModel`（`ctx.models.current()`）与 `actualEffort`（`ctx.getThinkingLevel()` 映射）解析：剥离后缀后首匹配 `match` 得 `matchedRule`，未命中取 `default`，定位 `actualEffort` 在 `automaticEfforts` 中的 index，`nextEffort = automaticEfforts[index+1]`。
+- **不可读**：`actualModel` 不可读（`null/undefined`）时记 `source_gap`，原因码 `SOURCE_GAP_ACTUAL_MODEL_UNREADABLE`；`actualEffort` 不可读时记 `SOURCE_GAP_ACTUAL_EFFORT_UNREADABLE`；均不产生 effort 变更。
+- **policy conflict**：`actualEffort` 可读但不存在于所选 `automaticEfforts` 时，视为 policy conflict，拒绝升档，原因码 `POLICY_CONFLICT_CURRENT_NOT_IN_LADDER`，`effortPolicyStatus: policy_conflict`，`health: degraded`，audit 记录 `policyConflict` 详情。
+- **仅下一阶**：每次仅允许升至下一阶，跨阶跳升不允许；已处末位则 `REJECTED_NO_NEXT_RUNG`。
+- **模型切换重匹配**：模型切换边界后下一次 `raise_effort` 按新 `actualModel` 重新首匹配并重算下一阶，不沿用旧匹配（D-18）。
+
+### 23.6 状态与审计字段（status / audit）
+
+`status` 新增只读视图（保留既有 `actualModel/actualEffort/effortOwner/health/sourceGaps/priceTelemetry`）：
+
+```ts
+interface StatusEffortPolicyView {
+  effortPolicyStatus: "ok" | "builtin-compat" | "config_error" | "policy_conflict" | "source_gap";
+  healthDetail: string | null;
+  effective: {
+    matchedRule: string | null; // 命中 match 或 "default" 或 "builtin-compat" 或 null
+    automaticEfforts: EffortLevel[] | null;
+    nextEffort: EffortLevel | null;
+    source: "rule" | "default" | "builtin-compat" | null;
+  } | null;
+  validationErrors: Array<{ code: string; message: string }>;
+}
+```
+
+audit（`weconverge_audit`）在 `raise_effort` 路径新增：
+
+```ts
+interface AuditEffortPolicyFields {
+  requestedEffort: EffortLevel | null;
+  actualModel: string | null;
+  actualEffort: EffortLevel | "unknown" | null;
+  matchedRule: string | null;
+  automaticEfforts: EffortLevel[] | null;
+  nextEffort: EffortLevel | null;
+  reasonCode: string | null; // 见 23.9
+  policySource: "rule" | "default" | "builtin-compat" | null;
+}
+```
+
+### 23.7 设置后读回（post-set readback）
+
+`raise_effort` 执行 `setThinkingLevel(nextEffort)` 后必须立即读回 `actualEffort`（`ctx.getThinkingLevel()`）与 `actualModel`：
+- 读回一致：audit 记 `ACCEPTED_*`，`status` 更新 `currentEffort`。
+- 读回不一致或不可读：记 `failed/degraded`，`restoreState` 按既有恢复契约处理，不二次重试；错误不被吞没。
+
+### 23.8 原生 task 保持咨询观察（Native task unchanged）
+
+原生 `task`（父模型直接发射的 `task(tasks:[...])`）不经 effort 阶梯门控：不阻断、不改写、不取消；阶梯仅作用于 `weconverge_decide: raise_effort` 的父会话 effort 变更。原生 `task` 的路由与 effort 仅作 `observed` 记录，必要时附加 `observedIsMax` 咨询标注。无按次用户授权工作流。
+
+### 23.9 原因码表（精确、穷尽 — 设计 §9.3 原样）
+
+| 场景 | `reasonCode` | `effortPolicyStatus` | 行为 |
+|---|---|---|---|
+| 命中规则并成功升档 | `ACCEPTED_NEXT_RUNG` | `ok` | 执行 `setThinkingLevel(next)` 并读回 |
+| 默认回退成功升档 | `ACCEPTED_DEFAULT_NEXT_RUNG` | `ok` | 同上，`matchedRule="default"` |
+| 已处阶梯末位无下一阶 | `REJECTED_NO_NEXT_RUNG` | `ok` | 拒绝升档 |
+| 当前档位不在阶梯内 | `POLICY_CONFLICT_CURRENT_NOT_IN_LADDER` | `policy_conflict` | 拒绝升档，`health: degraded` |
+| `actualModel` 不可读 | `SOURCE_GAP_ACTUAL_MODEL_UNREADABLE` | `source_gap` | 拒绝升档 |
+| `actualEffort` 不可读 | `SOURCE_GAP_ACTUAL_EFFORT_UNREADABLE` | `source_gap` | 拒绝升档 |
+| 配置校验失败 | `BLOCKED_CONFIG_ERROR` | `config_error` | 禁用自动升档，`health: degraded` |
+| 被重复/遮蔽规则命中（校验期） | `BLOCKED_DUPLICATE_OR_SHADOWED_RULE` | `config_error` | 同上 |
+| 非法 glob | `BLOCKED_INVALID_GLOB` | `config_error` | 同上 |
+| 非法 automaticEfforts（空/重复/乱序/非法值） | `BLOCKED_INVALID_LADDER` | `config_error` | 同上 |
+| 缺少必选 default | `BLOCKED_MISSING_DEFAULT` | `config_error` | 同上 |
+
+`accepted` / `rejected` / `blocked` / `source_gap` 四类原因码永不混淆；`accepted` 仅在实际执行 `setThinkingLevel` 前置校验全部通过且读回成功时产生。
+
+### 23.10 13 项新增验收（AC-E01..E13 — 使用虚构模型 ID，§13 等价于设计 AC-01..13）
+
+> 约定：模型 ID 均为虚构（如 `acme/*`、`other/bar`），源码与测试 fixtures 中不得出现真实模型名；`actualModel` 为 canonical `provider/model`，`actualEffort` 为当前 effort。
+
+| AC | 场景 | 配置要点 | 当时 | 期望 |
+|---|---|---|---|---|
+| AC-E01 | 有序首匹配命中首条 | `rules=[{match:"acme/f*", automaticEfforts:["medium","high"]},{match:"acme/*o", automaticEfforts:["high","xhigh"]}], default:{automaticEfforts:["medium","high","xhigh"]}` | `actualModel="acme/foo", actualEffort="medium"` | 命中 `acme/f*`（首条），`nextEffort="high"`，`ACCEPTED_NEXT_RUNG`，互不完全遮蔽，校验通过 |
+| AC-E02 | 未命中回退 default | `rules=[{match:"acme/*", automaticEfforts:["medium","high"]}], default:{automaticEfforts:["high","xhigh"]}` | `actualModel="other/bar", actualEffort="high"` | 走 `default`，`nextEffort="xhigh"`，`ACCEPTED_DEFAULT_NEXT_RUNG` |
+| AC-E03 | 大小写敏感区分 | `rules=[{match:"Acme/Foo", automaticEfforts:["medium","high"]}], default:{automaticEfforts:["medium","high","xhigh"]}` | `actualModel="acme/foo", actualEffort="medium"` | 不命中 `Acme/Foo`，回退 `default`，`nextEffort="high"` |
+| AC-E04 | effort 后缀分离 | `rules=[{match:"acme/foo", automaticEfforts:["medium","high","xhigh"]}], default:{automaticEfforts:["medium","high"]}` | `actualModel="acme/foo"`（自 `acme/foo:xhigh` 剥离后） `actualEffort="high"` | 命中 `acme/foo`，`nextEffort="xhigh"` |
+| AC-E05 | 缺席块走 builtin-compat | `effortPolicies` 缺席 | `actualModel="any/model", actualEffort="medium"` | 内置 `medium→high→xhigh`，`nextEffort="high"`，`builtin-compat`，无 CONFIG ERROR |
+| AC-E06 | 存在块但非法：禁用与 CONFIG ERROR | `rules=[{match:"", automaticEfforts:["medium","high"]}], default:{automaticEfforts:["medium","high"]}`（空 match 非法） | 任意 `raise_effort` | 禁用，`BLOCKED_CONFIG_ERROR`/`BLOCKED_INVALID_GLOB`，`health: degraded`，`effective=null` |
+| AC-E07 | 非连续阶梯跳升 | `rules=[{match:"acme/*", automaticEfforts:["medium","xhigh"]}], default:{automaticEfforts:["medium","high","xhigh"]}` | `actualModel="acme/bar", actualEffort="medium"` | 跳过 `high`，`nextEffort="xhigh"`，`ACCEPTED_NEXT_RUNG` |
+| AC-E08 | 已配置 Max 的自动升档 | `rules=[{match:"acme/*", automaticEfforts:["high","xhigh","max"]}], default:{automaticEfforts:["medium","high","xhigh"]}` | `actualModel="acme/bar", actualEffort="xhigh"` | `nextEffort="max"`，`ACCEPTED_NEXT_RUNG`；未含 `max` 则 `REJECTED_NO_NEXT_RUNG` |
+| AC-E09 | 当前档位不在阶梯内：policy conflict | `rules=[{match:"acme/*", automaticEfforts:["medium","xhigh"]}], default:{automaticEfforts:["medium","xhigh"]}` | `actualModel="acme/bar", actualEffort="high"` | 拒绝，`POLICY_CONFLICT_CURRENT_NOT_IN_LADDER`，`policy_conflict`/`degraded` |
+| AC-E10 | actualModel 不可读：SOURCE GAP | 任意合法 `effortPolicies` | `ctx.models.current()=null/undefined`, `actualEffort="medium"` | `SOURCE_GAP_ACTUAL_MODEL_UNREADABLE`，不变更 |
+| AC-E11 | 模型切换重匹配 | `rules=[{match:"acme/*", automaticEfforts:["medium","high"]},{match:"other/*", automaticEfforts:["high","xhigh","max"]}], default:{automaticEfforts:["medium","high","xhigh"]}` | `acme/foo/medium→high`；切换后 `other/bar/high` | 重匹配 `other/*`，`nextEffort="xhigh"`（后续可至 `max`） |
+| AC-E12 | `?` 单字符与 `*` 零字符 | `rules=[{match:"acme/fo?", automaticEfforts:["medium","high"]},{match:"acme/*", automaticEfforts:["high","xhigh"]}], default:{automaticEfforts:["medium","high","xhigh"]}` | `acme/foo/medium` 命中 `acme/fo?`；`acme//high` 命中 `acme/*` 零字符 | 前者 `next=high`，后者 `next=xhigh`，均 `ACCEPTED_NEXT_RUNG` |
+| AC-E13 | 重复/遮蔽校验 | `rules=[{match:"acme/*",…},{match:"acme/*",…}], default:{…}` 或 `rules=[{match:"acme/*",…},{match:"acme/foo",…}]` | 任意 `raise_effort` | 校验失败，`BLOCKED_DUPLICATE_OR_SHADOWED_RULE`，禁用，CONFIG ERROR |
+
+每项均按 23.9 原因码与 `status`/`audit` 可观测字段判定；源码/测试中模型 ID 必须为虚构 ID，不得使用真实产品模型名（D-13）。
+
+### 23.11 REQ→CAP→AC 增量映射（D-09..D-20）
+
+| 咨询 REQ | CAP | 现行 AC |
+|---|---|---|
+| REQ-116 | CAP-A10 (config schema) | AC-E01..E06, AC-E13 |
+| REQ-117 | CAP-A10 (glob/order/default) | AC-E01..E04, AC-E12..E13 |
+| REQ-118 | CAP-A10 (validation/disable) | AC-E06, AC-E13 |
+| REQ-119 | CAP-A10 (non-contiguous/Max) | AC-E07..E09 |
+| REQ-120 | CAP-A10 (per-raise/switch) | AC-E10..E11 |
+| REQ-121 | CAP-A10 (policy conflict) | AC-E09 |
+| REQ-122 | CAP-A10 (audit/readback) | AC-E01..E13（原因码与读回） |
+
+> 每个 `REQ-116..122` 至少映射一个可证伪 `AC-E`；`CAP-A10` 复用既有 `config/state/decision/status/audit` 模式，不引入第二套 schema。
+
+### 23.12 防退化补充
+
+设计硬约束“共享键仅 `match`/`automaticEfforts`/`default.automaticEfforts`、有序首匹配、大小写敏感全量 glob（仅 `*`/`?`）、effort 后缀剥离、缺席走 builtin-compat、非法禁用、仅下一阶、按次读回、切换重匹配、原因码穷尽、原生 task 咨询观察、无按次授权”任一项在后续技术设计/实现中缺失即为退化。
+
+## 24. 批准设计防退化矩阵（增量 — D-09..D-20）
+
+| 设计硬约束 | SPEC 锁定点（§23） | 验收 |
+|---|---|---|
+| 可配置按模型阶梯，键精确 | §23.1 | AC-E01..E06 |
+| 有序首匹配、大小写敏感、全量 glob（`*`/`?`）、后缀剥离 | §23.2 | AC-E01..E04, AC-E12 |
+| 缺席走 builtin-compat | §23.3 | AC-E05 |
+| 校验失败禁用 raise_effort + degraded/CONFIG ERROR | §23.3 | AC-E06, AC-E13 |
+| 非连续仅下一阶 | §23.4 | AC-E07 |
+| 已配置 Max 可自动、无 blanket Max 禁令 | §23.4 | AC-E08 |
+| 按次解析 actualModel/actualEffort + 切换重匹配 | §23.5 | AC-E10..E11 |
+| policy conflict | §23.5 | AC-E09 |
+| status/audit 原因码穷尽 | §23.6/23.9 | 全量 AC-E |
+| 设置后读回 | §23.7 | AC-E01..E02 等 accepted 路径 |
+| 原生 task 咨询观察、不阻断 | §23.8 | AC-E10 伴随断言 |
+| 13 项虚构 ID 验收、无真实模型名 | §23.10 | AC-E01..E13 |
+
+## 25. 完成判定（增量 — v1.2-effortPolicy，现行）
+
+在 §22.2 咨询层完成判定基础上，追加：
+
+11. `effortPolicies` 缺席走 `builtin-compat`（AC-E05），存在且合法走规则/default（AC-E01..E04/E07/E08），存在且非法禁用（AC-E06/E13）；
+12. `AC-E01..E13` 全部通过（确定性，虚构 ID）；
+13. `status`/`audit` 按 §23.6/23.9 暴露 `matchedRule`/`automaticEfforts`/`nextEffort`/`reasonCode`/`policySource` 且与实际读回一致；
+14. 每次 `raise_effort` 按次读回 `actualModel`/`actualEffort` 并在切换后重匹配（AC-E10/E11）；
+15. 设置后读回一致（AC-E01/E02 accepted 路径）；
+16. 原生 `task` 保持 advisory/unblocked，无 Max blanket 禁令，无按次授权弹窗；
+17. 共享键精确、无真实模型名字面量（D-13）。

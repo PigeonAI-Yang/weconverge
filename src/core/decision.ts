@@ -11,6 +11,7 @@ import type {
   CostComparisonV1,
   DifficultyType,
   Effort,
+  EffortLevel,
   EvidenceRefV1,
   Integrity,
   OmpAdapters,
@@ -18,13 +19,11 @@ import type {
   SemanticAction,
   SessionStateV1,
 } from "./types";
+import { BUILTIN_COMPAT_EFFORTS } from "./types";
 import { hasConfirmedEvidence, isModelSelfReportOnly } from "./evidence";
 import { resolveCapability, roleRelativeCostTier } from "./route";
-import {
-  transitionEffort,
-  nextEffortRung,
-  effortRaisePreconditionsMet,
-} from "./cost";
+import { effortRaisePreconditionsMet } from "./cost";
+import { canonicalizeModelId, globMatch, validateEffortPolicies } from "./config";
 import { buildAuditEvent } from "./audit";
 import { DecisionRegistry, hashPayload } from "./ledger";
 import { makeEventId } from "./ids";
@@ -124,6 +123,14 @@ class AuditSeq {
       decisionReason: string | null;
       effectiveAction: SemanticAction | null;
       createdChildIds: string[];
+      requestedEffort: EffortLevel | null;
+      actualModel: string | null;
+      actualEffort: Effort | null;
+      matchedRule: string | null;
+      automaticEfforts: EffortLevel[] | null;
+      nextEffort: EffortLevel | null;
+      reasonCode: string | null;
+      policySource: "rule" | "default" | "builtin-compat" | null;
     }> = {},
   ): AuditEventV1 {
     const ev = buildAuditEvent({
@@ -147,6 +154,14 @@ class AuditSeq {
       effectiveAction: extra.effectiveAction,
       createdChildIds: extra.createdChildIds,
       resolvedRoutes: extra.resolvedRoutes,
+      requestedEffort: extra.requestedEffort,
+      actualModel: extra.actualModel,
+      actualEffort: extra.actualEffort,
+      matchedRule: extra.matchedRule,
+      automaticEfforts: extra.automaticEfforts,
+      nextEffort: extra.nextEffort,
+      reasonCode: extra.reasonCode,
+      policySource: extra.policySource,
     });
     this.events.push(ev);
     return ev;
@@ -163,14 +178,14 @@ function result(
   nextState: SessionStateV1,
   opts: {
     effectiveAction?: SemanticAction | null;
+    createdChildIds?: string[];
     resolvedRoute?: ResolvedRouteV1 | null;
     resolvedRoutes?: ResolvedRouteV1[];
     relativeCostTier?: number | null;
     costComparison?: CostComparisonV1 | null;
-    createdChildIds?: string[];
   } = {},
 ): DecideResult {
-  return {
+  const first = {
     status,
     reason,
     state: nextState,
@@ -184,7 +199,8 @@ function result(
     resolvedRoutes: opts.resolvedRoutes ?? [],
     relativeCostTier: opts.relativeCostTier ?? null,
     costComparison: opts.costComparison ?? null,
-  };
+  } as DecideResult;
+  return first;
 }
 
 export function weconvergeDecide(args: DecideArgs): DecideResult {
@@ -256,6 +272,16 @@ function decideInner(args: DecideArgs): DecideResult {
     reason: string | undefined,
     nextState: SessionStateV1,
     opts: Parameters<typeof result>[4] = {},
+    auditExtra: Partial<{
+      requestedEffort: EffortLevel | null;
+      actualModel: string | null;
+      actualEffort: Effort | null;
+      matchedRule: string | null;
+      automaticEfforts: EffortLevel[] | null;
+      nextEffort: EffortLevel | null;
+      reasonCode: string | null;
+      policySource: "rule" | "default" | "builtin-compat" | null;
+    }> = {},
   ): DecideResult => {
     const terminalEvent = status === "accepted" ? "action_terminal" : `decision_${status}`;
     seq.push(terminalEvent, integrity, {
@@ -268,6 +294,7 @@ function decideInner(args: DecideArgs): DecideResult {
       resolvedRoutes: opts.resolvedRoutes,
       relativeCostTier: opts.relativeCostTier,
       costComparison: opts.costComparison,
+      ...auditExtra,
     });
     const first = result(seq, status, reason, nextState, { effectiveAction: d.action, ...opts });
     args.registry.record(scope, d.decisionId, hash, first.status, first);
@@ -394,41 +421,161 @@ function decideInner(args: DecideArgs): DecideResult {
     case "raise_effort": {
       const pre = effortRaisePreconditionsMet(state, d.difficultyType, refs);
       if (!pre.ok) return reject(pre.reason ?? "raise_effort precondition failed");
-      const rung = nextEffortRung(state.currentEffort);
-      if (!rung) {
-        return reject(state.currentEffort === "xhigh" ? "xhigh is the automatic ceiling" : `cannot raise from ${state.currentEffort}`);
-      }
-      const tr = transitionEffort(state.currentEffort, rung);
-      if (!tr.ok || !tr.next) return reject(tr.reason ?? "illegal effort transition");
 
-      // Advisory capability annotation: if capability mapped, record expected tier but do not dispatch.
+      // Validate effortPolicies block
+      const validation = validateEffortPolicies(config.effortPolicies);
+      if (config.effortPolicies !== undefined && !validation.ok) {
+        const first = validation.errors[0];
+        const code = first.code;
+        const nextState: SessionStateV1 = { ...state, health: "degraded", lastDecision: d };
+        seq.push("action_started", "partial");
+        return terminal("blocked", "blocked", `${code}: ${first.message}`, nextState, { effectiveAction: d.action }, {
+          actualModel: null,
+          actualEffort: null,
+          matchedRule: null,
+          automaticEfforts: null,
+          nextEffort: null,
+          reasonCode: code,
+          policySource: null,
+        });
+      }
+
+      // Read actual model/effort
+      const actual = adapters.readbackActual();
+      const actualModelRaw = actual?.model ?? null;
+      const actualEffortRaw: Effort | null = actual?.effort ?? "unknown";
+      if (actual == null || actualModelRaw == null) {
+        const nextState: SessionStateV1 = { ...state, lastDecision: d };
+        seq.push("action_started", "partial");
+        return terminal("source_gap", "source_gap", "SOURCE_GAP_ACTUAL_MODEL_UNREADABLE", nextState, { effectiveAction: d.action }, {
+          actualModel: actualModelRaw,
+          actualEffort: actualEffortRaw,
+          matchedRule: null,
+          automaticEfforts: null,
+          nextEffort: null,
+          reasonCode: "SOURCE_GAP_ACTUAL_MODEL_UNREADABLE",
+          policySource: null,
+        });
+      }
+      if (actualEffortRaw == null || actualEffortRaw === "unknown") {
+        const nextState: SessionStateV1 = { ...state, lastDecision: d };
+        seq.push("action_started", "partial");
+        return terminal("source_gap", "source_gap", "SOURCE_GAP_ACTUAL_EFFORT_UNREADABLE", nextState, { effectiveAction: d.action }, {
+          actualModel: actualModelRaw,
+          actualEffort: "unknown",
+          matchedRule: null,
+          automaticEfforts: null,
+          nextEffort: null,
+          reasonCode: "SOURCE_GAP_ACTUAL_EFFORT_UNREADABLE",
+          policySource: null,
+        });
+      }
+
+      // Resolve effective policy
+      let matchedRule: string | null = null;
+      let automaticEfforts: EffortLevel[] | null = null;
+      let policySource: "rule" | "default" | "builtin-compat" | null = null;
+      if (config.effortPolicies === undefined) {
+        matchedRule = "builtin-compat";
+        automaticEfforts = [...BUILTIN_COMPAT_EFFORTS];
+        policySource = "builtin-compat";
+      } else {
+        const canonical = canonicalizeModelId(actualModelRaw);
+        let found = false;
+        for (const r of config.effortPolicies.rules) {
+          if (canonical != null && globMatch(r.match, canonical)) {
+            matchedRule = r.match;
+            automaticEfforts = r.automaticEfforts;
+            policySource = "rule";
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          matchedRule = "default";
+          automaticEfforts = config.effortPolicies.default.automaticEfforts;
+          policySource = "default";
+        }
+      }
+
+      if (!automaticEfforts) {
+        const nextState: SessionStateV1 = { ...state, health: "degraded", lastDecision: d };
+        return terminal("blocked", "blocked", "BLOCKED_CONFIG_ERROR", nextState, { effectiveAction: d.action }, {
+          actualModel: actualModelRaw,
+          actualEffort: actualEffortRaw,
+          matchedRule: null,
+          automaticEfforts: null,
+          nextEffort: null,
+          reasonCode: "BLOCKED_CONFIG_ERROR",
+          policySource: null,
+        });
+      }
+
+      // Check current effort in ladder
+      const idx = automaticEfforts.indexOf(actualEffortRaw as EffortLevel);
+      if (idx === -1) {
+        const nextState: SessionStateV1 = { ...state, health: "degraded", lastDecision: d };
+        seq.push("action_started", "partial");
+        return terminal("blocked", "blocked", "POLICY_CONFLICT_CURRENT_NOT_IN_LADDER", nextState, { effectiveAction: d.action }, {
+          actualModel: actualModelRaw,
+          actualEffort: actualEffortRaw,
+          matchedRule,
+          automaticEfforts,
+          nextEffort: null,
+          reasonCode: "POLICY_CONFLICT_CURRENT_NOT_IN_LADDER",
+          policySource,
+        });
+      }
+      if (idx === automaticEfforts.length - 1) {
+        seq.push("action_started", "partial");
+        return terminal("rejected", "blocked", "REJECTED_NO_NEXT_RUNG", { ...state, lastDecision: d }, { effectiveAction: d.action }, {
+          actualModel: actualModelRaw,
+          actualEffort: actualEffortRaw,
+          matchedRule,
+          automaticEfforts,
+          nextEffort: null,
+          reasonCode: "REJECTED_NO_NEXT_RUNG",
+          policySource,
+        });
+      }
+      const nextEffort = automaticEfforts[idx + 1];
+
+      // Determine expected tier for advisory
       let expectedTier: number | null = null;
       if (d.capability) {
         const role = resolveCapability(config, d.capability);
         if (role) expectedTier = roleRelativeCostTier(config, role);
       }
+      void expectedTier;
 
       seq.push("action_started", "partial");
-      const ok = adapters.setSessionEffort(tr.next);
+      const ok = adapters.setSessionEffort(nextEffort);
       const readback = adapters.readbackActual();
       const verified =
-        ok && readback !== null && readback.effort === tr.next && readback.effort !== "unknown" && readback.effort !== "max";
+        ok && readback !== null && readback.effort === nextEffort;
       if (!verified) {
         const nextState: SessionStateV1 = {
           ...state,
-          currentEffort: readback?.effort ?? state.currentEffort,
+          currentEffort: (readback?.effort as Effort) ?? state.currentEffort,
           currentModel: readback?.model ?? state.currentModel,
           health: "degraded",
           restoreState: "failed",
           lastDecision: d,
         };
         return terminal("rejected", "failed", "effort set/readback failed or mismatched (kept actual)", nextState, {
-          relativeCostTier: config.effortCostTiers[tr.next] ?? null,
+          relativeCostTier: config.effortCostTiers[nextEffort] ?? null,
+        }, {
+          actualModel: actualModelRaw,
+          actualEffort: actualEffortRaw,
+          matchedRule,
+          automaticEfforts,
+          nextEffort,
+          reasonCode: "REJECTED_NO_NEXT_RUNG",
+          policySource,
         });
       }
-      // Build observed route from readback (source_gap if unknown).
       const observedEffort = readback.effort;
-      const integrity: Integrity = observedEffort !== "unknown" && observedEffort !== "max" && readback.model !== null ? "confirmed" : "source_gap";
+      const integrity: Integrity = observedEffort !== "unknown" && readback.model !== null ? "confirmed" : "source_gap";
       const route: ResolvedRouteV1 = {
         requestedRole: "current",
         resolvedAgent: null,
@@ -442,7 +589,7 @@ function decideInner(args: DecideArgs): DecideResult {
       const nextState: SessionStateV1 = {
         ...state,
         phase: "executing",
-        currentEffort: tr.next,
+        currentEffort: nextEffort,
         currentModel: readback.model,
         effortOwnedByExtension: true,
         lastEffortRaiseAt: args.now,
@@ -450,10 +597,19 @@ function decideInner(args: DecideArgs): DecideResult {
         health: "ok",
         routingIntegrity: integrity === "confirmed" ? "confirmed" : "source_gap",
       };
+      const reasonCode = policySource === "default" ? "ACCEPTED_DEFAULT_NEXT_RUNG" : "ACCEPTED_NEXT_RUNG";
       return terminal("accepted", "confirmed", undefined, nextState, {
         resolvedRoute: route,
-        relativeCostTier: config.effortCostTiers[tr.next] ?? null,
+        relativeCostTier: config.effortCostTiers[nextEffort] ?? null,
         costComparison: null,
+      }, {
+        actualModel: actualModelRaw,
+        actualEffort: actualEffortRaw,
+        matchedRule,
+        automaticEfforts,
+        nextEffort,
+        reasonCode,
+        policySource,
       });
     }
   }

@@ -79,10 +79,16 @@ function dec(over: Partial<ConvergenceDecisionV1>): ConvergenceDecisionV1 {
   return { version: 1, decisionId: `d-${++evCounter}`, action: "continue_current", difficultyType: "alternative_ready", obstacle: "obstacle", evidenceRefs: ["e1"], expectedNewInformation: "new info", successCriterion: "criterion", ...over };
 }
 function adapters(opts: { readback?: { model: string | null; effort: Effort } | null; setEffort?: boolean } = {}): OmpAdapters {
+  let cur: { model: string | null; effort: Effort } | null = opts.readback === undefined ? { model: "main-model", effort: "medium" } : opts.readback;
   return {
     resolveRole: (c) => DEFAULT_CONFIG.capabilities[c] ?? null,
-    readbackActual: () => (opts.readback === undefined ? { model: "main-model", effort: "medium" } : opts.readback),
-    setSessionEffort: (_e) => opts.setEffort ?? true,
+    readbackActual: () => (cur ? { ...cur } : null),
+    setSessionEffort: (e) => {
+      if (opts.setEffort === false) return false;
+      if (cur) cur = { ...cur, effort: e };
+      else cur = { model: null, effort: e };
+      return true;
+    },
     providerCallCount: () => 0,
   };
 }
@@ -151,9 +157,9 @@ function attemptEvidence(id = "e1"): EvidenceRefV1 { return ev(id, "confirmed", 
   // raise_effort with anchored evidence
   const sHigh = baseState(true, "medium", "main");
   const evA = attemptEvidence("eA");
-  const r4 = run(sHigh, dec({ action: "raise_effort", difficultyType: "reasoning_depth_insufficient", evidenceRefs: ["eA"] }), cfg, adapters({ readback: { model: "main-model", effort: "high" } }), [evA]);
-  // setSessionEffort succeeds and readback matches high => accepted (or degraded if mock mismatch)
-  ok("raise_effort not rejected as retired", r4.status !== "rejected" || (r4.reason ?? "").includes("precondition"));
+  const r4 = run(sHigh, dec({ action: "raise_effort", difficultyType: "reasoning_depth_insufficient", evidenceRefs: ["eA"] }), cfg, adapters({ readback: { model: "main-model", effort: "medium" } }), [evA]);
+  ok("raise_effort accepted via builtin ladder", r4.status === "accepted");
+  eq("raise_effort medium->high", r4.state.currentEffort, "high");
 }
 
 // =================== Requested / Expected / Observed / source_gap separation ===================

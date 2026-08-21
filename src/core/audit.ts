@@ -71,6 +71,14 @@ export function buildAuditEvent(args: {
   observed?: { resolvedModel?: string | null; lifecycle?: string | null } | null;
   inferred?: { relativeCostTierNote?: string | null; maxCapable?: boolean | null } | null;
   isDetachedTombstone?: boolean;
+  requestedEffort?: string | null;
+  actualModel?: string | null;
+  actualEffort?: string | null;
+  matchedRule?: string | null;
+  automaticEfforts?: string[] | null;
+  nextEffort?: string | null;
+  reasonCode?: string | null;
+  policySource?: string | null;
 }): AuditEventV1 {
   const d = args.decision;
   const event: AuditEventV1 = {
@@ -107,6 +115,14 @@ export function buildAuditEvent(args: {
   if (args.observed !== undefined) event.observed = args.observed;
   if (args.inferred !== undefined) event.inferred = args.inferred;
   if (args.isDetachedTombstone !== undefined) event.isDetachedTombstone = args.isDetachedTombstone;
+  if (args.requestedEffort !== undefined) (event as unknown as Record<string, unknown>).requestedEffort = args.requestedEffort;
+  if (args.actualModel !== undefined) (event as unknown as Record<string, unknown>).actualModel = args.actualModel;
+  if (args.actualEffort !== undefined) (event as unknown as Record<string, unknown>).actualEffort = args.actualEffort;
+  if (args.matchedRule !== undefined) (event as unknown as Record<string, unknown>).matchedRule = args.matchedRule;
+  if (args.automaticEfforts !== undefined) (event as unknown as Record<string, unknown>).automaticEfforts = args.automaticEfforts;
+  if (args.nextEffort !== undefined) (event as unknown as Record<string, unknown>).nextEffort = args.nextEffort;
+  if (args.reasonCode !== undefined) (event as unknown as Record<string, unknown>).reasonCode = args.reasonCode;
+  if (args.policySource !== undefined) (event as unknown as Record<string, unknown>).policySource = args.policySource;
   if (args.stateSnapshot !== undefined) event.stateSnapshot = sanitizeValue(args.stateSnapshot) as SessionStateV1 | null;
   return event;
 }

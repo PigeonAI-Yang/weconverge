@@ -26,6 +26,7 @@ import {
   parseCommand,
   makeInstallConfig,
   validateConfig,
+  validateEffortPolicies,
   rebuildSessionFromAudit,
   buildAuditEvent,
   isValidAuditEvent,
@@ -114,13 +115,24 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     }
   }
 
-  function loadPersistedEnabled(ctx: ExtensionContext): boolean | null {
+  function loadPersistedConfig(ctx: ExtensionContext): ConfigV1 | null {
     const dir = ensureSettingsDir(ctx);
     if (!dir) return null;
     try {
-      const raw = JSON.parse(readFileSync(join(dir, SETTINGS_FILE), "utf8")) as { schemaVersion?: number; enabled?: unknown };
+      const rawText = readFileSync(join(dir, SETTINGS_FILE), "utf8");
+      const raw = JSON.parse(rawText) as Record<string, unknown>;
       if (raw.schemaVersion !== 1 || typeof raw.enabled !== "boolean") return null;
-      return raw.enabled;
+      const base = makeInstallConfig();
+      const merged: ConfigV1 = { ...base, enabled: raw.enabled as boolean, schemaVersion: 1 };
+      if (typeof raw.maxParallelExplorers === "number") merged.maxParallelExplorers = raw.maxParallelExplorers as number;
+      if (typeof raw.maxExplorationWaves === "number") merged.maxExplorationWaves = raw.maxExplorationWaves as number;
+      if (raw.capabilities && typeof raw.capabilities === "object") merged.capabilities = raw.capabilities as Record<string, string>;
+      if (raw.relativeCostTiers && typeof raw.relativeCostTiers === "object") merged.relativeCostTiers = raw.relativeCostTiers as Record<string, number>;
+      if (raw.effortCostTiers && typeof raw.effortCostTiers === "object") merged.effortCostTiers = raw.effortCostTiers as Record<string, number>;
+      if ("effortPolicies" in raw) {
+        merged.effortPolicies = raw.effortPolicies as ConfigV1["effortPolicies"];
+      }
+      return merged;
     } catch {
       return null;
     }
@@ -132,13 +144,36 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
     const file = join(dir, SETTINGS_FILE);
     const tmp = join(dir, `${SETTINGS_FILE}.tmp`);
     try {
-      writeFileSync(tmp, JSON.stringify({ schemaVersion: 1, enabled, updatedAt: new Date().toISOString() }), "utf8");
+      let existing: Record<string, unknown> = {};
+      try {
+        const txt = readFileSync(file, "utf8");
+        const parsed = JSON.parse(txt);
+        if (parsed && typeof parsed === "object" && parsed !== null) existing = parsed as Record<string, unknown>;
+      } catch {
+        existing = {};
+      }
+      const next: Record<string, unknown> = { ...existing, schemaVersion: 1, enabled, updatedAt: new Date().toISOString() };
+      if (!("effortPolicies" in next) && config.effortPolicies !== undefined) {
+        next.effortPolicies = config.effortPolicies as unknown as Record<string, unknown>;
+      }
+      writeFileSync(tmp, JSON.stringify(next), "utf8");
       renameSync(tmp, file);
+      config = { ...config, enabled };
+      if (typeof existing.maxParallelExplorers === "number") config.maxParallelExplorers = existing.maxParallelExplorers as number;
+      if (typeof existing.maxExplorationWaves === "number") config.maxExplorationWaves = existing.maxExplorationWaves as number;
+      if (existing.capabilities && typeof existing.capabilities === "object") config.capabilities = existing.capabilities as Record<string, string>;
+      if (existing.relativeCostTiers && typeof existing.relativeCostTiers === "object") config.relativeCostTiers = existing.relativeCostTiers as Record<string, number>;
+      if (existing.effortCostTiers && typeof existing.effortCostTiers === "object") config.effortCostTiers = existing.effortCostTiers as Record<string, number>;
+      if ("effortPolicies" in existing) {
+        config.effortPolicies = existing.effortPolicies as ConfigV1["effortPolicies"];
+      }
       return true;
     } catch {
       return false;
     }
   }
+
+
 
   function persistState(): void {
     const r = safeAuditWrite(() => pi.appendEntry(STATE_ENTRY, state));
@@ -273,7 +308,7 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
       resolveRole: (capability: string) => config.capabilities[capability] ?? null,
       readbackActual: () => readbackActual(ctx),
       setSessionEffort: (effort: Effort) => {
-        if (effort === "unknown" || effort === "max") return false;
+        if (effort === "unknown") return false;
         try {
           pi.setThinkingLevel(effort as ThinkingLevel);
           return mapThinkingLevel(pi.getThinkingLevel()) === effort;
@@ -284,6 +319,7 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
       providerCallCount: () => providerCalls,
     };
   }
+
 
   function newTaskState(ctx: ExtensionContext, enabled: boolean): SessionStateV1 {
     const baseline = baselineFromActual(ctx);
@@ -464,8 +500,10 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     try {
       sessionId = ctx.sessionManager.getSessionId();
-      const persisted = loadPersistedEnabled(ctx);
-      config = { ...config, enabled: persisted ?? false };
+      const loaded = loadPersistedConfig(ctx);
+      if (loaded) {
+        config = loaded;
+      }
       const resumed = restoreFromBranch(ctx);
       if (!resumed) {
         const enabled = config.enabled;
@@ -476,6 +514,11 @@ export default function weconvergeExtension(pi: ExtensionAPI): void {
         } else {
           state = newTaskState(ctx, enabled);
         }
+      }
+      // Mark degraded if present policy invalid (design §5.2)
+      if (config.effortPolicies !== undefined) {
+        const vp = validateEffortPolicies(config.effortPolicies);
+        if (!vp.ok) state = { ...state, health: "degraded" };
       }
       persistEvent(makeWiringAuditEvent("session_start", state.health === "ok" ? "confirmed" : "degraded"));
     } catch (e) {

@@ -20,8 +20,10 @@ export type DifficultyType =
   | "source_missing"
   | "proven_blocker";
 
-/** `max` is only for detection, never an automatic target. */
 export type Effort = "medium" | "high" | "xhigh" | "max" | "unknown";
+export type EffortLevel = "medium" | "high" | "xhigh" | "max";
+export const EFFORT_ORDER: EffortLevel[] = ["medium", "high", "xhigh", "max"];
+export const EFFORT_ORDER_MAP: Record<EffortLevel, number> = { medium: 0, high: 1, xhigh: 2, max: 3 };
 
 export type Phase =
   | "disabled"
@@ -143,6 +145,11 @@ export interface SessionStateV1 {
   health: "ok" | "degraded";
 }
 
+export interface EffortPoliciesBlock {
+  rules: Array<{ match: string; automaticEfforts: EffortLevel[] }>;
+  default: { automaticEfforts: EffortLevel[] };
+}
+
 export interface ConfigV1 {
   schemaVersion: 1;
   enabled: boolean;
@@ -153,6 +160,7 @@ export interface ConfigV1 {
   capabilities: Record<string, string>;
   relativeCostTiers: Record<string, number>;
   effortCostTiers: Record<string, number>;
+  effortPolicies?: EffortPoliciesBlock;
 }
 
 /** SPEC §13: candidates, exclusion reasons, cost tiers and final choice. */
@@ -165,6 +173,31 @@ export interface CostComparisonV1 {
   chosen: SemanticAction | null;
 }
 
+
+export interface StatusEffortPolicyView {
+  effortPolicyStatus: "ok" | "builtin-compat" | "config_error" | "policy_conflict" | "source_gap";
+  healthDetail: string | null;
+  effective: {
+    matchedRule: string | null;
+    automaticEfforts: EffortLevel[] | null;
+    nextEffort: EffortLevel | null;
+    source: "rule" | "default" | "builtin-compat" | null;
+  } | null;
+  validationErrors: Array<{ code: string; message: string }>;
+}
+
+export interface AuditEffortPolicyFields {
+  requestedEffort: EffortLevel | null;
+  actualModel: string | null;
+  actualEffort: Effort | null;
+  matchedRule: string | null;
+  automaticEfforts: EffortLevel[] | null;
+  nextEffort: EffortLevel | null;
+  reasonCode: string | null;
+  policySource: "rule" | "default" | "builtin-compat" | null;
+}
+
+// SessionState remains unchanged; health is separate from effort policy status but degraded on config_error/policy_conflict
 export interface AuditEventV1 {
   schemaVersion: 1;
   eventId: string;
@@ -199,6 +232,15 @@ export interface AuditEventV1 {
   observed?: { resolvedModel?: string | null; lifecycle?: string | null } | null;
   inferred?: { relativeCostTierNote?: string | null; maxCapable?: boolean | null } | null;
   isDetachedTombstone?: boolean;
+  // Effort policy audit extensions
+  requestedEffort?: EffortLevel | null;
+  actualModel?: string | null;
+  actualEffort?: Effort | null;
+  matchedRule?: string | null;
+  automaticEfforts?: EffortLevel[] | null;
+  nextEffort?: EffortLevel | null;
+  reasonCode?: string | null;
+  policySource?: "rule" | "default" | "builtin-compat" | null;
 }
 
 // ---- Injected OMP adapters (pure advisory — no dispatch) ----
@@ -255,6 +297,6 @@ export const DEFAULT_CONFIG: ConfigV1 = {
   },
 };
 
-// Allowed automatic effort targets. `max` excluded.
+export const BUILTIN_COMPAT_EFFORTS: EffortLevel[] = ["medium", "high", "xhigh"];
 export const AUTO_EFFORTS: Effort[] = ["medium", "high", "xhigh"];
 export const BLOCKED_RESULT: Integrity = "blocked";
