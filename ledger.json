@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "project": "WEConverge",
   "version": "1.0.0",
-  "updatedAt": "2026-08-21T10:30:00+08:00",
+  "updatedAt": "2026-08-21T11:30:00+08:00",
   "statusCorrection": {
     "date": "2026-08-20",
     "reason": "2026-08-19 验收结论 REJECTED：ACCEPTANCE/ledger 与现场证据不一致（错误完成声明/证据失真）。本段保留该历史纠偏及证据；当前修复后 T04/T05/T06/T08 已完成，T07 仍因 AC-101..115 的 BLOCKED/SOURCE GAP 保持 blocked，T09 在真实本地 commit 前保持 pending。",
@@ -492,8 +492,9 @@
       "deps": [
         "T13"
       ],
-      "status": "in_progress",
-      "note": "Owner-approved design docs/spark/2026-08-21-configurable-model-effort-policy-design.md @ bfef9fd + Owner implementation authorization 2026-08-21; deps T13 only (not blocked T14, satisfied). Scope/artifacts 为契约路径清单未声称已存在或已通过：src/core/config.ts, src/core/types.ts, src/core/decision.ts, src/core/state.ts, src/core/audit.ts, src/core/status.ts, src/extension.ts, PRD.md, SPEC.md, TECHNICAL_DESIGN.md, README.md, README.txt, test/mechanical.test.ts, test/extension.integration.test.ts. 精确验收：13 项设计 ACs AC-01..AC-13 + post-set actual readback 读回一致 + 源码 src 内无硬编码真实模型名 + native task 保持 advisory 观察不阻断；验收保持 pending 直至实现目标套件通过，不得伪造 verifiedBy；当前唯一 in_progress.",
+      "status": "done",
+      "verifiedBy": "commit 398681b: node --experimental-strip-types --loader ./scripts/node-ts-loader.mjs test/effortPolicy.test.ts → 49/49 PASS (AC-E01..E13 + post-set actual readback + settings lifecycle + native task advisory unchanged); same loader test/extension.integration.test.ts → 126/126 PASS; npm test → 66/66 PASS; npm run typecheck:core → exit 0; forbidden real-model-name scan (src + focused test files) → no matches; T14 remains blocked",
+      "note": "已完成 commit 398681b — 权威 docs/spark/2026-08-21-configurable-model-effort-policy-design.md @ bfef9fd + Owner implementation authorization 2026-08-21; deps T13 only (not blocked T14, satisfied). 精确验收 13 项 AC-E01..E13（AC-01..13）+ post-set actual readback 读回一致 + settings lifecycle（complete loads, on/off preserves policy, invalid degrades without mutation）+ 源码 src 内无硬编码真实模型名（scan 0 matches）+ native task 保持 advisory 不阻断均已通过；无 in_progress 剩余，T14 保持 blocked，未声称 live acceptance complete。",
       "artifacts": [
         "src/core/config.ts",
         "src/core/types.ts",
@@ -509,6 +510,7 @@
         "README.txt",
         "test/mechanical.test.ts",
         "test/extension.integration.test.ts",
+        "test/effortPolicy.test.ts",
         "docs/spark/2026-08-21-configurable-model-effort-policy-design.md"
       ]
     }
