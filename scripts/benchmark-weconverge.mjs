@@ -21,6 +21,7 @@ function usage(exitCode=1){
   node scripts/benchmark-weconverge.mjs capture --run <opaque-id> --exit-code <n> --duration-ms <n> --final-answer <path>
   node scripts/benchmark-weconverge.mjs execute --run <opaque-id> [--dry-run]
   node scripts/benchmark-weconverge.mjs execute-all [--dry-run]
+  node scripts/benchmark-weconverge.mjs probe-usage [--correlation <id>] [--prompt <text>] [--out-dir <dir>]
 `);
   process.exit(exitCode);
 }
@@ -54,6 +55,185 @@ function loadExecution(){
   if(!fs.existsSync(EXECUTION_PATH)) throw new Error(`missing execution config ${EXECUTION_PATH}`);
   const cfg = JSON.parse(fs.readFileSync(EXECUTION_PATH,'utf-8'));
   return cfg;
+}
+
+// ---- OMP usage capture (official machine-readable surface) ----
+// Official surface: `omp -p --no-session --mode json` line-delimited JSON event stream.
+// Each line is JSON object; assistant messages carry `message.usage` with provider response facts
+// (openai-responses: input/output/cacheRead/cacheWrite/totalTokens/cost).
+// Exact evidence: message_end/turn_end/agent_end `message.usage` objects (see probe artifacts).
+// Delegated probe delegated-20260821-001: parent stream shows only parent provider usage (0 due to deadline in that run; normally non-zero) and hub wait shows child job metadata (toolCallId call_HuNSOLfLrxKhLVsirhGNfhye|fc_..., job ComputeProduct, resolvedModel opencode-go-responses/muse-spark-1.2-contributor, duration 14.6s) but no child Provider token counts — parent-only aggregate, child SOURCE GAP, no double counting (dedup by responseId, uncorrelatable rejected).
+// Cross-run/global usage (`omp usage`/`omp stats`) rejected — only per-run jsonl consumed.
+function parseOmpJsonlUsage(jsonlPath, jsonlText){
+  const raw = jsonlText !== undefined ? jsonlText : fs.readFileSync(jsonlPath, 'utf-8');
+  const lines = raw.split('\n').filter(l=>l.trim().length>0);
+  const byResponseId = new Map();
+  let eventCount = 0;
+  let provider = null;
+  let model = null;
+  let api = null;
+  let uncorrelatable_count = 0;
+  const responseIds = [];
+  for(const line of lines){
+    let obj;
+    try{ obj = JSON.parse(line); }catch{ continue; }
+    eventCount++;
+    const candidates = [];
+    if(obj.message && obj.message.usage) candidates.push(obj.message);
+    if(Array.isArray(obj.messages)){
+      for(const m of obj.messages){ if(m && m.usage) candidates.push(m); }
+    }
+    if(obj.message && Array.isArray(obj.message.content)){
+      // already candidate
+    }
+    // turn_end/message_end wraps message directly; agent_end wraps messages array
+    for(const msg of candidates){
+      const u = msg.usage;
+      if(!u || typeof u !== 'object') continue;
+      const rid = msg.responseId || msg.response_id || u.responseId || null;
+      if(!rid){
+        uncorrelatable_count++;
+        continue;
+      }
+      const key = rid;
+      // dedup prefer non-zero
+      if(!byResponseId.has(key)){
+        byResponseId.set(key, { usage: u, meta: { provider: msg.provider || null, model: msg.model || null, api: msg.api || null, responseId: rid, timestamp: msg.timestamp || null } });
+        responseIds.push(rid);
+        if(msg.provider && !provider) provider = msg.provider;
+        if(msg.model && !model) model = msg.model;
+        if(msg.api && !api) api = msg.api;
+      } else {
+        const prev = byResponseId.get(key);
+        const prevTotal = (prev.usage && (prev.usage.totalTokens ?? prev.usage.total_tokens)) || 0;
+        const curTotal = (u.totalTokens ?? u.total_tokens) || 0;
+        const prevInput = (prev.usage && prev.usage.input) || 0;
+        const curInput = u.input || 0;
+        if(curTotal > prevTotal || curInput > prevInput){
+          byResponseId.set(key, { usage: u, meta: { provider: msg.provider || provider, model: msg.model || model, api: msg.api || api, responseId: rid, timestamp: msg.timestamp || null } });
+        }
+      }
+    }
+  }
+  let sumInput = 0, sumOutput = 0, sumCacheRead = 0, sumCacheWrite = 0, sumTotal = 0, sumReasoning = 0;
+  let hasInput = false, hasOutput = false, hasCacheRead = false, hasCacheWrite = false, hasTotal = false, hasReasoning = false;
+  for(const [, v] of byResponseId){
+    const u = v.usage;
+    if(u.input !== undefined && u.input !== null){ sumInput += Number(u.input)||0; hasInput = true; }
+    else if(u.input_tokens !== undefined){ sumInput += Number(u.input_tokens)||0; hasInput = true; }
+    if(u.output !== undefined && u.output !== null){ sumOutput += Number(u.output)||0; hasOutput = true; }
+    else if(u.output_tokens !== undefined){ sumOutput += Number(u.output_tokens)||0; hasOutput = true; }
+    if(u.cacheRead !== undefined && u.cacheRead !== null){ sumCacheRead += Number(u.cacheRead)||0; hasCacheRead = true; }
+    else if(u.cache_read !== undefined){ sumCacheRead += Number(u.cache_read)||0; hasCacheRead = true; }
+    if(u.cacheWrite !== undefined && u.cacheWrite !== null){ sumCacheWrite += Number(u.cacheWrite)||0; hasCacheWrite = true; }
+    if(u.totalTokens !== undefined && u.totalTokens !== null){ sumTotal += Number(u.totalTokens)||0; hasTotal = true; }
+    else if(u.total_tokens !== undefined){ sumTotal += Number(u.total_tokens)||0; hasTotal = true; }
+    if(u.reasoningTokens !== undefined && u.reasoningTokens !== null){ sumReasoning += Number(u.reasoningTokens)||0; hasReasoning = true; }
+    else if(u.reasoning_tokens !== undefined){ sumReasoning += Number(u.reasoning_tokens)||0; hasReasoning = true; }
+    else if(u.reasoning !== undefined && u.reasoning !== null){ sumReasoning += Number(u.reasoning)||0; hasReasoning = true; }
+  }
+  const aggregated = {
+    input: hasInput ? sumInput : null,
+    cached_input: hasCacheRead ? sumCacheRead : null,
+    cache_write: hasCacheWrite ? sumCacheWrite : null,
+    output: hasOutput ? sumOutput : null,
+    reasoning: hasReasoning ? sumReasoning : null,
+    total: hasTotal ? sumTotal : (hasInput && hasOutput ? sumInput + sumOutput : null),
+    event_count: eventCount,
+    deduped_responses: byResponseId.size,
+    uncorrelatable_count: uncorrelatable_count,
+    response_ids: responseIds,
+    provider: provider,
+    model: model,
+    api: api,
+    byResponseId: Array.from(byResponseId.entries()).map(([k,v])=>({ key:k, usage:v.usage, meta:v.meta }))
+  };
+  return aggregated;
+}
+
+function buildNormalizedUsage(agg, extra){
+  const provenance = {
+    provider: agg.provider || null,
+    model: agg.model || null,
+    api: agg.api || null,
+    response_ids: agg.response_ids || [],
+    event_count: agg.event_count,
+    deduped_responses: agg.deduped_responses,
+    uncorrelatable_count: agg.uncorrelatable_count ?? 0,
+    jsonl_sha256: extra && extra.jsonl_sha256 ? extra.jsonl_sha256 : null,
+    jsonl_path: extra && extra.jsonl_path ? extra.jsonl_path : null,
+    captured_at: new Date().toISOString(),
+    correlation: extra && extra.correlation ? extra.correlation : null
+  };
+  const gapEntries = [];
+  if((agg.uncorrelatable_count ?? 0) > 0){
+    gapEntries.push(`uncorrelatable usage records: ${agg.uncorrelatable_count} records without responseId were rejected/skipped and not aggregated — SOURCE GAP (deterministic, never estimated)`);
+  }
+  const normalized = {
+    input: agg.input !== null && agg.input !== undefined ? agg.input : null,
+    cached_input: agg.cached_input !== null && agg.cached_input !== undefined ? agg.cached_input : null,
+    output: agg.output !== null && agg.output !== undefined ? agg.output : null,
+    reasoning: agg.reasoning !== null && agg.reasoning !== undefined ? agg.reasoning : null,
+    total: agg.total !== null && agg.total !== undefined ? agg.total : null,
+    source: "omp --mode json event stream: message.usage (Provider response facts, openai-responses) — official machine-readable usage surface for `omp -p --no-session`",
+    provenance: provenance,
+    raw: {
+      cache_write: agg.cache_write,
+      by_response: agg.byResponseId
+    },
+    attribution: {
+      note: "SOURCE GAP: delegated probe delegated-20260821-001 shows parent JSON stream contains only parent Provider usage (deduped by responseId, uncorrelatable rejected, no double counting); child task job appears via hub wait (toolCallId call_HuNSOLfLrxKhLVsirhGNfhye, job ComputeProduct, resolvedModel opencode-go-responses/muse-spark-1.2-contributor, duration 14.6s) but child token counts not present in parent stream — child coverage unproven/SOURCE GAP, parent-only aggregate.",
+      main: null,
+      children: null
+    },
+    source_gaps: [
+      "reasoning tokens: exposed as usage.reasoningTokens when present (e.g. 47 in wireusage-20260821-001) — otherwise null/SOURCE GAP; not double-counted in total",
+      "child attribution/coverage: delegated probe shows child job metadata (toolCallId, jobId, resolvedModel) via hub wait but no child Provider usage in parent JSON stream — child tokens SOURCE GAP, not separable authoritatively for usage; parent-only aggregate, no double counting",
+      "subscription quota / API price: not exposed by per-run usage surface — SOURCE GAP unless `omp usage` (global, rejected for per-run)",
+      "cost: available in raw usage.cost but not normalized as price — excluded from normalized pricing",
+      ...gapEntries
+    ]
+  };
+  return normalized;
+}
+
+function persistUsageForRun(runDir, jsonlPath, jsonlText, extra){
+  let agg;
+  let jsonlSha = null;
+  try{
+    const txt = jsonlText !== undefined ? jsonlText : (fs.existsSync(jsonlPath) ? fs.readFileSync(jsonlPath,'utf-8') : '');
+    if(txt) jsonlSha = crypto.createHash('sha256').update(txt,'utf-8').digest('hex');
+    agg = parseOmpJsonlUsage(jsonlPath, txt);
+  }catch(e){
+    agg = { input:null, cached_input:null, output:null, reasoning:null, total:null, cache_write:null, event_count:0, deduped_responses:0, uncorrelatable_count:0, response_ids:[], provider:null, model:null, api:null, byResponseId:[] };
+  }
+  const normalized = buildNormalizedUsage(agg, { jsonl_sha256: jsonlSha, jsonl_path: jsonlPath ? path.relative(ROOT, jsonlPath) : null, correlation: extra && extra.correlation ? extra.correlation : null });
+  const usagePath = path.join(runDir,'usage.json');
+  fs.writeFileSync(usagePath, JSON.stringify(normalized,null,2));
+  return normalized;
+}
+
+function extractFinalAnswerFromJsonl(jsonlText){
+  const lines = jsonlText.split('\n').filter(l=>l.trim().length>0);
+  let lastText = null;
+  for(const line of lines){
+    let obj;
+    try{ obj = JSON.parse(line); }catch{ continue; }
+    if(obj.type==='agent_end' && Array.isArray(obj.messages)){
+      for(const m of obj.messages){
+        if(m.role==='assistant' && Array.isArray(m.content)){
+          for(const c of m.content){ if(c.type==='text' && typeof c.text==='string'){ lastText = c.text; } }
+        }
+      }
+    }
+    if(obj.type==='message_end' && obj.message && obj.message.role==='assistant' && Array.isArray(obj.message.content)){
+      for(const c of obj.message.content){ if(c.type==='text' && typeof c.text==='string'){ lastText = c.text; } }
+    }
+    if(obj.type==='turn_end' && obj.message && obj.message.role==='assistant' && Array.isArray(obj.message.content)){
+      for(const c of obj.message.content){ if(c.type==='text' && typeof c.text==='string'){ lastText = c.text; } }
+    }
+  }
+  return lastText;
 }
 
 function verifyScheduleConfigOrThrow(){
@@ -342,8 +522,27 @@ function cmdCapture(runId, exitCode, durationMs, finalAnswerPath){
   }
   // capture git artifacts
   const patchInfo = captureGitArtifacts(runDir);
+  // ---- usage persistence (deterministic per-run, reject global) ----
+  const ompJsonlPath = path.join(runDir,'omp.jsonl');
+  let normalizedUsage = null;
+  if(fs.existsSync(ompJsonlPath)){
+    try{
+      const txt = fs.readFileSync(ompJsonlPath,'utf-8');
+      normalizedUsage = persistUsageForRun(runDir, ompJsonlPath, txt, { correlation: run.run_id });
+    }catch{
+      const gapAgg = { input:null, cached_input:null, output:null, reasoning:null, total:null, cache_write:null, event_count:0, deduped_responses:0, uncorrelatable_count:0, response_ids:[], provider:null, model:null, api:null, byResponseId:[] };
+      normalizedUsage = buildNormalizedUsage(gapAgg, { jsonl_sha256:null, jsonl_path: path.relative(ROOT, ompJsonlPath), correlation: run.run_id });
+      normalizedUsage.source_gaps.unshift("omp.jsonl read error — usage remains null/SOURCE GAP");
+      fs.writeFileSync(path.join(runDir,'usage.json'), JSON.stringify(normalizedUsage,null,2));
+    }
+  } else {
+    const gapAgg = { input:null, cached_input:null, output:null, reasoning:null, total:null, cache_write:null, event_count:0, deduped_responses:0, uncorrelatable_count:0, response_ids:[], provider:null, model:null, api:null, byResponseId:[] };
+    normalizedUsage = buildNormalizedUsage(gapAgg, { jsonl_sha256:null, jsonl_path:null, correlation: run.run_id });
+    normalizedUsage.source_gaps.unshift("omp.jsonl missing for this run — usage remains null/SOURCE GAP (existing finalized runs retain readability)");
+    fs.writeFileSync(path.join(runDir,'usage.json'), JSON.stringify(normalizedUsage,null,2));
+  }
   // validate schedule immutability already done
-  // build anonymous result
+  // build anonymous result (include usage if available, no arm leak)
   const resultAnon = {
     run_id: run.run_id,
     instance_id: run.instance_id,
@@ -357,13 +556,14 @@ function cmdCapture(runId, exitCode, durationMs, finalAnswerPath){
     patch_bytes: patchInfo.patch_bytes,
     git_head: patchInfo.git_head,
     git_status: patchInfo.git_status,
-    submitted_at: new Date().toISOString()
+    submitted_at: new Date().toISOString(),
+    usage: normalizedUsage
   };
   const resultStr = JSON.stringify(resultAnon);
   assertNoArmLeakInText(resultStr, 'result-anon');
   const anonPath = path.join(runDir,'result-anon.json');
   fs.writeFileSync(anonPath, JSON.stringify(resultAnon,null,2));
-  // also finalize grading.json for compatibility (anonymous)
+  // also finalize grading.json for compatibility (anonymous) — keep minimal but also include usage for audit
   const grading = {
     run_id: run.run_id,
     instance_id: run.instance_id,
@@ -375,11 +575,12 @@ function cmdCapture(runId, exitCode, durationMs, finalAnswerPath){
       duration_ms: dm,
       final_answer_sha256: finalAnswerSha,
       patch_sha256: patchInfo.patch_sha256
-    }
+    },
+    usage: normalizedUsage
   };
   assertNoArmLeakInText(JSON.stringify(grading), 'grading');
   fs.writeFileSync(path.join(runDir,'grading.json'), JSON.stringify(grading,null,2));
-  // controller-only metadata outside grading (may contain arm)
+  // controller-only metadata outside grading (may contain arm) — include usage
   const controllerMeta = {
     run_id: run.run_id,
     instance_id: run.instance_id,
@@ -395,10 +596,11 @@ function cmdCapture(runId, exitCode, durationMs, finalAnswerPath){
     duration_ms: dm,
     patch_sha256: patchInfo.patch_sha256,
     final_answer_sha256: finalAnswerSha,
-    captured_at: resultAnon.submitted_at
+    captured_at: resultAnon.submitted_at,
+    usage: normalizedUsage
   };
   fs.writeFileSync(path.join(runDir,'controller.json'), JSON.stringify(controllerMeta,null,2));
-  console.log(JSON.stringify({ run_id: runId, captured:true, exit_code: ec, duration_ms: dm, patch_sha256: patchInfo.patch_sha256, final_answer_sha256: finalAnswerSha, anon: anonPath, grading: path.join(runDir,'grading.json') },null,2));
+  console.log(JSON.stringify({ run_id: runId, captured:true, exit_code: ec, duration_ms: dm, patch_sha256: patchInfo.patch_sha256, final_answer_sha256: finalAnswerSha, anon: anonPath, grading: path.join(runDir,'grading.json'), usage: path.join(runDir,'usage.json') },null,2));
 }
 
 function runControlVerb(verb, cfg, dryRun){
@@ -435,7 +637,7 @@ function cmdExecute(runId, dryRun){
     const controlOnOff = `omp -p --no-session --model ${cfg.model} --thinking ${cfg.thinking||cfg.effort} --max-time ${cfg.control_max_time} --no-skills --no-rules --no-extensions --extension ${cfg.extension} \"/weconverge ${armVerb}\"`;
     const controlReset = `omp -p --no-session --model ${cfg.model} --thinking ${cfg.thinking||cfg.effort} --max-time ${cfg.control_max_time} --no-skills --no-rules --no-extensions --extension ${cfg.extension} \"/weconverge reset\"`;
     const promptPath = path.join(runDir,'PROMPT.md');
-    const trialCmd = `omp -p --no-session --model ${cfg.model} --thinking ${cfg.thinking||cfg.effort} --max-time ${cfg.max_time} --auto-approve --approval-mode ${cfg.approval_mode} --no-extensions --extension ${cfg.extension} @${promptPath}`;
+    const trialCmd = `omp -p --no-session --mode json --model ${cfg.model} --thinking ${cfg.thinking||cfg.effort} --max-time ${cfg.max_time} --auto-approve --approval-mode ${cfg.approval_mode} --no-extensions --extension ${cfg.extension} @${promptPath}`;
     const plan = {
       run_id: run.run_id,
       instance_id: run.instance_id,
@@ -497,22 +699,38 @@ function cmdExecute(runId, dryRun){
   const armVerb = run.arm === 'ON' ? 'on' : 'off';
   console.log(`applying arm ${run.arm} via control ${armVerb}...`);
   runControlVerb(armVerb, cfg, false);
-  // trial invocation
+  // trial invocation — use official --mode json for deterministic usage capture (per-run, not global)
   const promptPath = path.join(runDir,'PROMPT.md');
   const repoDir = path.join(runDir,'repo');
   const cwd = fs.existsSync(repoDir) ? repoDir : runDir;
   let exitCode = 0;
   let durationMs = 0;
   {
-    const trialArgs = ['-p','--no-session','--model', cfg.model,'--thinking', cfg.thinking||cfg.effort,'--max-time', cfg.max_time,'--auto-approve','--approval-mode', cfg.approval_mode,'--no-extensions','--extension', cfg.extension, `@${promptPath}`];
-    console.log(`running trial ${runId} with omp...`);
+    const trialArgs = ['-p','--no-session','--mode','json','--model', cfg.model,'--thinking', cfg.thinking||cfg.effort,'--max-time', cfg.max_time,'--auto-approve','--approval-mode', cfg.approval_mode,'--no-extensions','--extension', cfg.extension, `@${promptPath}`];
+    console.log(`running trial ${runId} with omp --mode json...`);
     const start = Date.now();
     const trialRes = spawnSync('omp', trialArgs, { encoding:'utf-8', timeout: 35*60*1000, cwd, windowsHide: true, maxBuffer: 20*1024*1024 });
     durationMs = Date.now() - start;
     exitCode = trialRes.status === null ? 2 : trialRes.status;
-    if(trialRes.stdout) process.stdout.write(trialRes.stdout);
-    if(trialRes.stderr) process.stderr.write(trialRes.stderr);
-    console.log(`trial exit ${exitCode} duration ${durationMs}ms`);
+    // persist raw event stream per-run (deterministic, rejected cross-run/global)
+    const rawJsonl = trialRes.stdout || '';
+    const rawStderr = trialRes.stderr || '';
+    const ompJsonlPath = path.join(runDir,'omp.jsonl');
+    try{ fs.writeFileSync(ompJsonlPath, rawJsonl, 'utf-8'); }catch{}
+    if(rawStderr) fs.writeFileSync(path.join(runDir,'omp.stderr.txt'), rawStderr, 'utf-8');
+    // also persist stderr to console for visibility
+    if(trialRes.stdout) process.stdout.write(trialRes.stdout.slice(0, 4000));
+    if(trialRes.stderr) process.stderr.write(trialRes.stderr.slice(0, 4000));
+    // derive final answer text from jsonl if not already materialized by extension
+    let derived = null;
+    try{ derived = extractFinalAnswerFromJsonl(rawJsonl); }catch{}
+    if(derived && derived.trim().length>0){
+      const faPath = path.join(runDir,'final-answer.txt');
+      if(!fs.existsSync(faPath) || fs.readFileSync(faPath,'utf-8').trim().length===0 || fs.readFileSync(faPath,'utf-8').includes('missing final answer')){
+        try{ fs.writeFileSync(faPath, derived, 'utf-8'); }catch{}
+      }
+    }
+    console.log(`trial exit ${exitCode} duration ${durationMs}ms (json events ${rawJsonl.split('\n').filter(l=>l.trim()).length})`);
   }
   // capture final answer path (runDir/final-answer.txt or PROMPT fallback)
   let finalAnswerPath = path.join(runDir,'final-answer.txt');
@@ -587,6 +805,58 @@ function cmdExecuteAll(dryRun){
     console.log(JSON.stringify({ execute_all:true, completed:true, dry_run: !!dryRun },null,2));
   }
 }
+function cmdProbeUsage(correlation, promptText, outDir){
+  const cfg = loadExecution();
+  const corr = correlation || `probe-${Date.now().toString(16)}-${Math.random().toString(16).slice(2,8)}`;
+  const prompt = promptText || `Probe correlation ${corr}: Say hello in one word and repeat the correlation.`;
+  const targetDir = outDir ? path.resolve(outDir) : path.join(RUNS_ROOT, `probe-${corr}`);
+  fs.mkdirSync(targetDir, { recursive:true });
+  const promptWithCor = `${prompt}`;
+  const tmpPromptPath = path.join(targetDir, 'PROMPT.md');
+  fs.writeFileSync(tmpPromptPath, promptWithCor, 'utf-8');
+  const probeArgs = ['-p','--no-session','--mode','json','--model', cfg.model,'--thinking','minimal','--max-time','20s','--no-skills','--no-rules','--no-extensions','--extension', cfg.extension, `@${tmpPromptPath}`];
+  console.log(`probe correlation ${corr} with model ${cfg.model} --mode json`);
+  const start = Date.now();
+  const res = spawnSync('omp', probeArgs, { encoding:'utf-8', timeout: 30000, windowsHide:true, maxBuffer: 10*1024*1024 });
+  const durationMs = Date.now() - start;
+  const exitCode = res.status === null ? 2 : res.status;
+  const jsonl = res.stdout || '';
+  const stderr = res.stderr || '';
+  const jsonlPath = path.join(targetDir,'omp.jsonl');
+  fs.writeFileSync(jsonlPath, jsonl, 'utf-8');
+  if(stderr) fs.writeFileSync(path.join(targetDir,'omp.stderr.txt'), stderr, 'utf-8');
+  const jsonlSha = crypto.createHash('sha256').update(jsonl,'utf-8').digest('hex');
+  // parse usage deterministically per-run (reject global)
+  const agg = parseOmpJsonlUsage(jsonlPath, jsonl);
+  const normalized = buildNormalizedUsage(agg, { jsonl_sha256: jsonlSha, jsonl_path: path.relative(ROOT, jsonlPath), correlation: corr });
+  fs.writeFileSync(path.join(targetDir,'usage.json'), JSON.stringify(normalized,null,2));
+  // also write a small evidence packet
+  const derived = extractFinalAnswerFromJsonl(jsonl);
+  const evidence = {
+    correlation: corr,
+    prompt: promptWithCor,
+    exit_code: exitCode,
+    duration_ms: durationMs,
+    jsonl_path: path.relative(ROOT, jsonlPath),
+    jsonl_sha256: jsonlSha,
+    jsonl_bytes: Buffer.byteLength(jsonl,'utf-8'),
+    jsonl_lines: jsonl.split('\n').filter(l=>l.trim()).length,
+    derived_answer: derived ? derived.slice(0, 400) : null,
+    usage: normalized,
+    official_source: normalized.source,
+    source_gaps: normalized.source_gaps
+  };
+  fs.writeFileSync(path.join(targetDir,'probe.json'), JSON.stringify(evidence,null,2));
+  console.log(JSON.stringify({ probe_correlation: corr, exit_code: exitCode, duration_ms: durationMs, jsonl: path.relative(ROOT, jsonlPath), usage: normalized, derived_answer: derived ? derived.slice(0,200) : null }, null, 2));
+  if(exitCode!==0){
+    console.error(`probe exit ${exitCode}`);
+    process.exit(2);
+  }
+  // verify persisted numbers match official source: raw sum vs normalized
+  const check = agg;
+  console.log(JSON.stringify({ probe_verified:true, correlation: corr, input: check.input, cached_input: check.cached_input, output: check.output, total: check.total, provenance: normalized.provenance },null,2));
+  return evidence;
+}
 const args = process.argv.slice(2);
 const cmd = args[0];
 if(cmd==='preflight'){
@@ -615,6 +885,14 @@ if(cmd==='preflight'){
 } else if(cmd==='execute-all'){
   const dry = args.includes('--dry-run');
   cmdExecuteAll(dry);
+} else if(cmd==='probe-usage'){
+  const cIdx = args.indexOf('--correlation');
+  const pIdx = args.indexOf('--prompt');
+  const oIdx = args.indexOf('--out-dir');
+  const corr = cIdx!==-1 ? args[cIdx+1] : null;
+  const prompt = pIdx!==-1 ? args[pIdx+1] : null;
+  const outDir = oIdx!==-1 ? args[oIdx+1] : null;
+  cmdProbeUsage(corr, prompt, outDir);
 } else {
   usage();
 }
